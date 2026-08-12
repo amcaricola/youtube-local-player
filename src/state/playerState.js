@@ -8,6 +8,9 @@ export const playerState = {
   duration: signal(0),
   currentTrack: signal(null), // { videoId, title, artist, thumbnailUrl }
   isReady: signal(false),
+  isBuffering: signal(false),
+  errorMessage: signal(''),
+  isFullscreen: signal(false),
   trackEndedFlag: signal(0)
 };
 

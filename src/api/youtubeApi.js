@@ -76,3 +76,24 @@ export const fetchPlaylistData = async (playlistId, apiKey) => {
     rawItems: items
   };
 };
+
+/**
+ * Busca videos de reemplazo en YouTube para un link roto.
+ * @param {string} query 
+ * @param {string} apiKey 
+ * @param {number} [maxResults=8]
+ * @returns {Promise<Array<{videoId: string, title: string, channelTitle: string, thumbnailUrl: string}>>}
+ */
+export const searchVideos = async (query, apiKey, maxResults = 8) => {
+  const res = await fetch(`${BASE_URL}/search?part=snippet&type=video&maxResults=${maxResults}&q=${encodeURIComponent(query)}&key=${apiKey}`);
+  if (!res.ok) {
+    throw new Error((await res.json()).error?.message || 'Error en la búsqueda');
+  }
+  const data = await res.json();
+  return (data.items || []).map(item => ({
+    videoId: item.id.videoId,
+    title: item.snippet.title,
+    channelTitle: item.snippet.channelTitle,
+    thumbnailUrl: item.snippet.thumbnails?.medium?.url || ''
+  }));
+};

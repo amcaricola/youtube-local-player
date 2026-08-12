@@ -2,15 +2,22 @@ import { useEffect, useState } from 'preact/hooks';
 import { effect } from '@preact/signals';
 import { PlayerBar } from './components/player/PlayerBar.jsx';
 import { SettingsModal } from './components/settings/SettingsModal.jsx';
+import { TrackEditModal } from './components/playlist/TrackEditModal.jsx';
+import { TrackRepairModal } from './components/playlist/TrackRepairModal.jsx';
+import { StatusBadge } from './components/common/StatusBadge.jsx';
+import { runCascadingLinkCheck } from './api/linkChecker.js';
 import { initYouTubePlayer, playTrack } from './api/iframePlayer.js';
 import { extractPlaylistId } from './api/youtubeApi.js';
 import { playerState } from './state/playerState.js';
 import { settingsState } from './state/settingsState.js';
-import { playlistState, loadLocalPlaylists, importYouTubePlaylist, playNextTrack, filteredTracks } from './state/playlistState.js';
+import { playlistState, loadLocalPlaylists, importYouTubePlaylist, syncAllPlaylists, playNextTrack, filteredTracks, problemCounts } from './state/playlistState.js';
 
 // Auto-play siguiente canción cuando termine
 effect(() => {
   if (playerState.trackEndedFlag.value > 0) {
+    // Resetear el flag ANTES de avanzar: si YouTube dispara ENDED
+    // varias veces seguidas, solo avanzamos una canción.
+    playerState.trackEndedFlag.value = 0;
     playNextTrack();
   }
 });
@@ -20,10 +27,20 @@ export function App() {
 
   useEffect(() => {
     initYouTubePlayer();
-    loadLocalPlaylists();
+    loadLocalPlaylists().then(async () => {
+      if (settingsState.autoSyncPlaylists.value) {
+        const results = await syncAllPlaylists();
+        const total = results.reduce((acc, r) => ({ added: acc.added + r.added, removed: acc.removed + r.removed }), { added: 0, removed: 0 });
+        if (total.added > 0 || total.removed > 0) {
+          playlistState.syncNotice.value = `Sincronizado: +${total.added} nuevas, ${total.removed} eliminadas de YouTube`;
+          setTimeout(() => { playlistState.syncNotice.value = null; }, 6000);
+        }
+      }
+      runCascadingLinkCheck();
+    });
   }, []);
 
-  const handleImport = () => {
+  const handleImport = async () => {
     const playlistId = extractPlaylistId(importUrl);
     if (!playlistId) {
       alert("No se pudo extraer el ID de la Playlist. Usa un link válido como https://www.youtube.com/playlist?list=...");
@@ -35,11 +52,15 @@ export function App() {
       return;
     }
     
-    importYouTubePlaylist(playlistId, settingsState.apiKey.value);
+    await importYouTubePlaylist(playlistId, settingsState.apiKey.value);
     setImportUrl('');
+    runCascadingLinkCheck();
   };
 
   const activePlaylist = playlistState.activePlaylist.value;
+  const visibleTracks = filteredTracks.value.slice(0, playlistState.visibleLimit.value);
+  const counts = problemCounts.value;
+  const totalProblems = counts.broken + counts.warning;
 
   return (
     <div class="h-screen w-full flex flex-col bg-gray-900 text-gray-100">
@@ -47,12 +68,14 @@ export function App() {
         <h1 class="text-xl font-bold bg-gradient-to-r from-red-500 to-purple-500 bg-clip-text text-transparent">
           YouTube Player Local
         </h1>
-        <button 
-          onClick={() => settingsState.isSettingsOpen.value = true}
-          class="p-2 rounded-full hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
-        >
+        <div class="flex items-center gap-2">
+          <button 
+            onClick={() => settingsState.isSettingsOpen.value = true}
+            class="p-2 rounded-full hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+          >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
         </button>
+        </div>
       </header>
 
       <main class="flex-1 overflow-hidden flex relative">
@@ -99,11 +122,18 @@ export function App() {
               {/* Playlist Header */}
               <div class="p-8 pb-6 bg-gradient-to-b from-blue-900/40 to-transparent flex gap-6 items-end">
                 <img src={activePlaylist.thumbnail} alt="Playlist cover" class="w-48 h-48 rounded-xl shadow-2xl object-cover" />
-                <div>
+                <div class="flex-1">
                   <h4 class="text-xs font-bold uppercase tracking-widest text-blue-400 mb-2">Playlist Pública</h4>
                   <h2 class="text-5xl font-bold text-white mb-4 shadow-black/50">{activePlaylist.title}</h2>
-                  <p class="text-gray-300 text-sm">{activePlaylist.tracks.length} canciones • Importada recientemente</p>
+                  <p class="text-gray-300 text-sm">
+                    {activePlaylist.tracks.length} canciones • Importada recientemente
+                  </p>
                 </div>
+                {!activePlaylist.youtubePlaylistId && (
+                  <p class="text-xs text-gray-400 text-right pb-2 max-w-[200px]">
+                    Playlist local — crea una playlist en YouTube y sincronízala para mantenerla actualizada
+                  </p>
+                )}
               </div>
               
               {/* Playlist Table */}
@@ -119,7 +149,41 @@ export function App() {
                       class="w-full bg-black/40 border border-white/10 rounded-full pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                     />
                   </div>
+                  {(totalProblems > 0) && (
+                    <button
+                      onClick={() => playlistState.problemFilter.value = !playlistState.problemFilter.value}
+                      class={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
+                        playlistState.problemFilter.value
+                          ? 'bg-red-500/25 border-red-500/50 text-white'
+                          : 'bg-white/5 border-white/10 text-gray-300 hover:bg-red-500/15 hover:border-red-500/40'
+                      }`}
+                      title={playlistState.problemFilter.value ? 'Mostrar todas las canciones' : 'Mostrar solo canciones con problemas'}
+                    >
+                      <svg class="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path></svg>
+                      <span>{counts.broken} rotas</span>
+                      {counts.warning > 0 && <span class="text-amber-300">{counts.warning} avisos</span>}
+                      {playlistState.problemFilter.value && <span class="text-gray-300">• solo problemas</span>}
+                    </button>
+                  )}
                 </div>
+                {playlistState.problemFilter.value && filteredTracks.value.length === 0 && (
+                  totalProblems === 0 ? (
+                  <div class="py-6 text-center text-sm text-green-400 flex items-center justify-center gap-3">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path></svg>
+                    Sin errores en la lista
+                    <button
+                      onClick={() => playlistState.problemFilter.value = false}
+                      class="px-3 py-1 rounded-full bg-green-500/20 border border-green-500/40 text-green-300 hover:bg-green-500/40 hover:text-white transition-colors font-medium"
+                    >
+                      Volver a la lista
+                    </button>
+                  </div>
+                  ) : (
+                  <div class="py-6 text-center text-sm text-gray-400">
+                    Ninguna canción con problemas coincide con la búsqueda actual.
+                  </div>
+                  )
+                )}
                 
                 <table class="w-full text-left text-sm text-gray-400">
                   <thead class="border-b border-white/10 text-gray-400 uppercase text-xs">
@@ -127,10 +191,11 @@ export function App() {
                       <th class="pb-3 w-12 text-center">#</th>
                       <th class="pb-3">Título de Canción</th>
                       <th class="pb-3">Artista Extraído</th>
+                      <th class="pb-3 text-right pr-3">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTracks.value.map((track, idx) => {
+                    {visibleTracks.map((track, idx) => {
                       const isPlaying = playerState.currentTrack.value?.videoId === track.videoId;
                       return (
                         <tr 
@@ -154,14 +219,50 @@ export function App() {
                               </span>
                             </div>
                           </td>
-                          <td class="py-3 rounded-r-lg">
-                            {track.artist}
+                          <td class="py-3 rounded-r-lg flex items-center justify-between gap-2 pr-3">
+                            <span>{track.artist}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                playlistState.editingTrack.value = track;
+                              }}
+                              class="p-1.5 rounded-md text-blue-400 bg-blue-500/20 border border-blue-400/30 hover:bg-blue-500/50 hover:text-white hover:border-blue-400/60 transition-all opacity-0 group-hover:opacity-100"
+                              title="Editar metadatos"
+                            >
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                          </td>
+<td class="py-3 pr-3 text-right">
+                            <StatusBadge
+                              status={track.removedFromSource ? 'removed' : track.status}
+                              message={track.removedFromSource ? 'Ya no está en la playlist de YouTube, pero sigue guardada con su información' : track.statusMessage}
+                              onClick={() => {
+                                if (track.removedFromSource) {
+                                  window.open(`https://www.youtube.com/watch?v=${track.videoId}`, '_blank');
+                                } else {
+                                  playlistState.repairTrack.value = track;
+                                }
+                              }}
+                            />
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+                {filteredTracks.value.length > playlistState.visibleLimit.value && (
+                  <div class="flex items-center justify-center gap-3 pt-4">
+                    <span class="text-xs text-gray-500">
+                      Mostrando {visibleTracks.length} de {filteredTracks.value.length} (el shuffle y el filtrado usan todas)
+                    </span>
+                    <button
+                      onClick={() => playlistState.visibleLimit.value += 100}
+                      class="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors font-medium"
+                    >
+                      Mostrar más
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -175,6 +276,8 @@ export function App() {
 
       <PlayerBar />
       <SettingsModal />
+      <TrackEditModal />
+      <TrackRepairModal />
     </div>
   );
 }
