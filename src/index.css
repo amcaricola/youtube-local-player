@@ -32,8 +32,8 @@
   }
 }
 
-.fullscreen-player #yt-player-container,
-.fullscreen-player #yt-player-container iframe {
+#yt-player-shell #yt-player-container,
+#yt-player-shell #yt-player-container iframe {
   width: 100% !important;
   height: 100% !important;
 }

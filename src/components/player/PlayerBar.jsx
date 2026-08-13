@@ -1,14 +1,11 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useRef } from 'preact/hooks';
 import { playerState, progressPercent } from '../../state/playerState.js';
-import { playlistState, playNextTrack, playPrevTrack } from '../../state/playlistState.js';
+import { playlistState } from '../../state/playlistState.js';
 import { togglePlay, setVolume, toggleMute, toggleFullscreen, seekTo, formatTime } from '../../api/iframePlayer.js';
 
 export function PlayerBar() {
   const progressBarRef = useRef(null);
   const volumeBarRef = useRef(null);
-  const fullscreenShellRef = useRef(null);
-  const hideControlsTimerRef = useRef(null);
-  const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
 
   const handleSeek = (e) => {
     if (!progressBarRef.current) return;
@@ -41,104 +38,13 @@ export function PlayerBar() {
     el.addEventListener('pointercancel', onUp);
   };
 
-  const handleFullscreenSeek = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    seekTo(percent * playerState.duration.value);
-  };
-
-  const revealFullscreenControls = () => {
-    setFullscreenControlsVisible(true);
-    clearTimeout(hideControlsTimerRef.current);
-    if (playerState.isFullscreen.value) {
-      hideControlsTimerRef.current = setTimeout(() => setFullscreenControlsVisible(false), 2500);
-    }
-  };
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isFullscreen = document.fullscreenElement === fullscreenShellRef.current;
-      playerState.isFullscreen.value = isFullscreen;
-      if (isFullscreen) revealFullscreenControls();
-      else {
-        clearTimeout(hideControlsTimerRef.current);
-        setFullscreenControlsVisible(true);
-      }
-    };
-
-    const hideOnWindowExit = () => {
-      if (playerState.isFullscreen.value) setFullscreenControlsVisible(false);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('visibilitychange', hideOnWindowExit);
-    window.addEventListener('blur', hideOnWindowExit);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('visibilitychange', hideOnWindowExit);
-      window.removeEventListener('blur', hideOnWindowExit);
-      clearTimeout(hideControlsTimerRef.current);
-    };
-  }, []);
-
   const currentTrack = playerState.currentTrack.value;
   const isPlaying = playerState.isPlaying.value;
   const isMuted = playerState.isMuted.value || playerState.volume.value === 0;
   const repeatMode = playlistState.repeatMode.value;
-  const isFullscreen = playerState.isFullscreen.value;
 
   return (
     <footer class="h-20 glass-dark shrink-0 flex items-center justify-between px-6 z-20 transition-all relative">
-      <div
-        ref={fullscreenShellRef}
-        class={isFullscreen
-          ? 'fullscreen-player fixed inset-0 z-[100] bg-black'
-          : 'absolute left-[-9999px] top-0 w-[400px] h-[300px] overflow-hidden'}
-        onMouseMove={revealFullscreenControls}
-        onMouseLeave={() => isFullscreen && setFullscreenControlsVisible(false)}
-      >
-        <div id="yt-player-container" class="w-full h-full"></div>
-        {isFullscreen && (
-          <div
-            class="absolute inset-0 z-10"
-            onMouseMove={revealFullscreenControls}
-            aria-hidden="true"
-          ></div>
-        )}
-        {isFullscreen && fullscreenControlsVisible && (
-          <div class="absolute inset-x-0 bottom-0 z-20 p-5 pt-16 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none">
-            <div
-              class="h-1.5 w-full rounded-full bg-white/30 cursor-pointer mb-4 overflow-hidden pointer-events-auto"
-              onClick={handleFullscreenSeek}
-            >
-              <div class="h-full bg-red-500" style={{ width: `${progressPercent.value}%` }}></div>
-            </div>
-            <div class="flex items-center gap-5 text-white pointer-events-auto">
-              <button onClick={playPrevTrack} class="hover:text-red-300 transition-colors" title="Anterior" aria-label="Anterior">
-                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"></path></svg>
-              </button>
-              <button onClick={togglePlay} class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center" title={isPlaying ? 'Pausar' : 'Reproducir'} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
-                {isPlaying
-                  ? <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
-                  : <svg class="w-5 h-5 fill-current ml-1" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>}
-              </button>
-              <button onClick={playNextTrack} class="hover:text-red-300 transition-colors" title="Siguiente" aria-label="Siguiente">
-                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"></path></svg>
-              </button>
-              <button onClick={toggleMute} class="ml-auto hover:text-red-300 transition-colors" title={isMuted ? 'Activar sonido' : 'Silenciar'} aria-label={isMuted ? 'Activar sonido' : 'Silenciar'}>
-                {isMuted
-                  ? <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM4.27 3L3 4.27 19.73 21 21 19.73 4.27 3z"></path></svg>
-                  : <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"></path></svg>}
-              </button>
-              <span class="text-xs text-gray-300">{formatTime(playerState.currentTime.value)} / {formatTime(playerState.duration.value)}</span>
-              <button onClick={() => toggleFullscreen(fullscreenShellRef.current)} class="hover:text-red-300 transition-colors" title="Salir de pantalla completa" aria-label="Salir de pantalla completa">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 9V5m0 4H5m10 6v4m0-4h4M5 15v4h4M19 9V5h-4"></path></svg>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Track Info */}
       <div class="flex items-center gap-4 w-1/3">
         <div class="w-12 h-12 bg-gray-800 rounded-md overflow-hidden relative shadow-md">
@@ -285,7 +191,7 @@ export function PlayerBar() {
           ></div>
         </div>
         <button
-          onClick={() => toggleFullscreen(fullscreenShellRef.current)}
+          onClick={() => toggleFullscreen()}
           disabled={!currentTrack || !playerState.isReady.value}
           class="text-gray-400 hover:text-white transition-colors disabled:opacity-40"
           title="Ver video en pantalla completa"

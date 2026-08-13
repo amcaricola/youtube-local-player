@@ -54,7 +54,6 @@ export function App() {
   };
 
   useEffect(() => {
-    initYouTubePlayer();
     loadLocalPlaylists().then(async () => {
       if (settingsState.autoSyncPlaylists.value) {
         const results = await syncAllPlaylists();
@@ -134,6 +133,11 @@ export function App() {
   };
 
   const activePlaylist = playlistState.activePlaylist.value;
+
+  useEffect(() => {
+    if (activePlaylist) initYouTubePlayer();
+  }, [activePlaylist?.id]);
+
   const selectedArtists = new Set(playlistState.artistFilters.value.map(artist => artist.toLowerCase()));
   const artistSearch = artistInput.trim().toLowerCase();
   const uniqueArtists = [...new Map(
@@ -198,23 +202,34 @@ export function App() {
             </div>
           </div>
           
-          <div class="p-4 flex-1 overflow-y-auto">
+          <div class="p-4 flex-1 overflow-y-auto flex flex-col">
             <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Tus Listas</h2>
-            {playlistState.playlists.value.map(pl => (
-              <button 
+             {playlistState.playlists.value.map(pl => (
+               <button 
                 key={pl.id}
                 onClick={() => playlistState.activePlaylist.value = pl}
                 class={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm truncate mb-1 ${
                   activePlaylist?.id === pl.id ? 'bg-blue-600 text-white' : 'hover:bg-white/10'
                 }`}
               >
-                {pl.title}
-              </button>
-            ))}
-          </div>
+                 {pl.title}
+               </button>
+             ))}
+             {activePlaylist && (
+               <div class="w-full h-[200px] max-h-[200px] mt-auto shrink-0 overflow-hidden rounded-xl bg-black border border-white/10 shadow-xl">
+                 <div
+                   id="yt-player-shell"
+                   class="w-full h-full"
+                   aria-label="Reproductor de YouTube"
+                 >
+                   <div id="yt-player-container" class="w-full h-full"></div>
+                 </div>
+               </div>
+             )}
+           </div>
         </aside>
 
-        <section class="flex-1 overflow-y-auto p-0 bg-gradient-to-br from-gray-900 to-black relative">
+        <section class="flex-1 overflow-hidden p-0 bg-gradient-to-br from-gray-900 to-black relative">
           {activePlaylist ? (
             <div class="h-full flex flex-col">
               {/* Playlist Header */}
@@ -235,7 +250,7 @@ export function App() {
               </div>
               
               {/* Playlist Table */}
-              <div class="px-8 pb-8 flex-1 flex flex-col">
+              <div class="px-8 pb-8 flex-1 min-h-0 overflow-y-auto flex flex-col">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div class="flex flex-wrap items-center gap-2">
                     <div class="relative w-64">
@@ -457,7 +472,9 @@ export function App() {
                     </button>
                   </div>
                 )}
+
               </div>
+
             </div>
           ) : (
             <div class="h-full flex flex-col items-center justify-center text-gray-500">
@@ -465,6 +482,7 @@ export function App() {
               <p>Importa o selecciona una playlist para comenzar.</p>
             </div>
           )}
+
         </section>
       </main>
 

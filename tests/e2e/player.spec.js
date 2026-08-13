@@ -107,7 +107,7 @@ test('exporta e importa un respaldo JSON', async ({ page }) => {
 
 test('los atajos controlan el reproductor mock', async ({ page }) => {
   await seedApp(page);
-  await page.locator('tr').nth(1).click();
+  await page.locator('tr').nth(1).locator('td').first().click();
   await page.waitForTimeout(250);
 
   await page.keyboard.press('Space');

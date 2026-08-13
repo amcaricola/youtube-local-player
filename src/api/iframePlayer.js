@@ -34,14 +34,12 @@ export const initYouTubePlayer = () => {
         videoId: '',
         playerVars: {
           'playsinline': 1,
-          'controls': 0,
-          'disablekb': 1,
-          'fs': 0,
+          'controls': 1,
+          'disablekb': 0,
+          'fs': 1,
           'iv_load_policy': 3,
           'cc_load_policy': 0,
-          'autohide': 1,
           'rel': 0,
-          'modestbranding': 1,
           'origin': window.location.origin // Esencial para evitar bloqueos de origen en localhost
         },
         events: {
@@ -208,7 +206,7 @@ export const toggleMute = () => {
 
 export const toggleFullscreen = async (fullscreenContainer = null) => {
   const iframe = player?.getIframe?.();
-  const target = fullscreenContainer || iframe;
+  const target = fullscreenContainer || document.getElementById('yt-player-shell') || iframe;
   if (!target) return;
 
   try {
