@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'preact/hooks';
-import { playlistState, updateTrackMetadata, removeTrackFromPlaylist } from '../../state/playlistState.js';
+import { useEffect, useMemo, useState } from 'preact/hooks';
+import { playlistState, showToast, updateTrackMetadata, removeTrackFromPlaylist } from '../../state/playlistState.js';
 import { parseTrackMetadata } from '../../api/metadataParser.js';
+import { getArtistSuggestions } from './artistSuggestions.js';
 
 export function TrackEditModal() {
   const track = playlistState.editingTrack.value;
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (track) {
@@ -14,6 +16,10 @@ export function TrackEditModal() {
       setArtist(track.artist);
     }
   }, [track]);
+
+  const artistSuggestions = useMemo(() => {
+    return getArtistSuggestions(playlistState.activePlaylist.value, artist, track);
+  }, [artist, track, playlistState.activePlaylist.value]);
 
   if (!track) return null;
 
@@ -23,29 +29,48 @@ export function TrackEditModal() {
     setArtist(parsed.artist);
   };
 
+  // Espera a que los datos se persistan y cierra al terminar, mostrando
+  // un toast de confirmación. Los errores se muestran dentro del modal.
   const handleSave = async () => {
     const active = playlistState.activePlaylist.value;
     if (!active) return;
     setSaving(true);
-    await updateTrackMetadata(active.id, track.id, {
-      title: title.trim() || track.title,
-      artist: artist.trim() || track.artist
-    });
-    setSaving(false);
-    playlistState.editingTrack.value = null;
+    setError('');
+    try {
+      await updateTrackMetadata(active.id, track.id, {
+        title: title.trim() || track.title,
+        artist: artist.trim() || track.artist
+      });
+      playlistState.editingTrack.value = null;
+      showToast('Canción actualizada');
+    } catch (e) {
+      console.error('Error al guardar la canción:', e);
+      setError('No se pudo guardar: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleClose = () => {
-    if (!saving) playlistState.editingTrack.value = null;
+    playlistState.editingTrack.value = null;
   };
 
   const handleRemoveTrack = async () => {
     const active = playlistState.activePlaylist.value;
     if (!active) return;
     setSaving(true);
-    await removeTrackFromPlaylist(active.id, track.id);
-    setSaving(false);
-    playlistState.editingTrack.value = null;
+    setError('');
+    try {
+      const removedTitle = track.title || track.originalTitle;
+      await removeTrackFromPlaylist(active.id, track.id);
+      playlistState.editingTrack.value = null;
+      showToast(`Se eliminó "${removedTitle}"`);
+    } catch (e) {
+      console.error('Error al eliminar la canción:', e);
+      setError('No se pudo eliminar: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -90,6 +115,12 @@ export function TrackEditModal() {
           </div>
         )}
 
+        {error && (
+          <div class="text-xs p-3 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 mb-4">
+            {error}
+          </div>
+        )}
+
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-1">Título de la Canción</label>
@@ -104,13 +135,28 @@ export function TrackEditModal() {
 
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-1">Artista</label>
-            <input
-              type="text"
-              value={artist}
-              onInput={(e) => setArtist(e.target.value)}
-              class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-              placeholder="Nombre del artista..."
-            />
+            <div class="relative">
+              <input
+                type="text"
+                value={artist}
+                onInput={(e) => setArtist(e.target.value)}
+                class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                placeholder="Nombre del artista..."
+              />
+              {artistSuggestions.length > 0 && (
+                <div class="absolute left-0 right-0 top-full z-30 mt-1 rounded-lg border border-white/10 bg-gray-900 shadow-xl overflow-hidden">
+                  {artistSuggestions.map(name => (
+                    <button
+                      type="button"
+                      onClick={() => setArtist(name)}
+                      class="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {(track.originalTitle || track.channelTitle) && (

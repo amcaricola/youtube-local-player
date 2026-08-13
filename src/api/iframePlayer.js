@@ -37,6 +37,9 @@ export const initYouTubePlayer = () => {
           'controls': 0,
           'disablekb': 1,
           'fs': 0,
+          'iv_load_policy': 3,
+          'cc_load_policy': 0,
+          'autohide': 1,
           'rel': 0,
           'modestbranding': 1,
           'origin': window.location.origin // Esencial para evitar bloqueos de origen en localhost
@@ -203,15 +206,16 @@ export const toggleMute = () => {
   }
 };
 
-export const toggleFullscreen = async () => {
+export const toggleFullscreen = async (fullscreenContainer = null) => {
   const iframe = player?.getIframe?.();
-  if (!iframe) return;
+  const target = fullscreenContainer || iframe;
+  if (!target) return;
 
   try {
     if (document.fullscreenElement) {
       await document.exitFullscreen();
-    } else if (iframe.requestFullscreen) {
-      await iframe.requestFullscreen();
+    } else if (target.requestFullscreen) {
+      await target.requestFullscreen();
     }
   } catch (error) {
     console.warn('[YT Player] No se pudo activar pantalla completa:', error);

@@ -6,11 +6,11 @@ import { TrackEditModal } from './components/playlist/TrackEditModal.jsx';
 import { TrackRepairModal } from './components/playlist/TrackRepairModal.jsx';
 import { StatusBadge } from './components/common/StatusBadge.jsx';
 import { runCascadingLinkCheck } from './api/linkChecker.js';
-import { initYouTubePlayer, playTrack } from './api/iframePlayer.js';
+import { initYouTubePlayer, playTrack, togglePlay, toggleMute, setVolume, seekTo } from './api/iframePlayer.js';
 import { extractPlaylistId } from './api/youtubeApi.js';
 import { playerState } from './state/playerState.js';
 import { settingsState } from './state/settingsState.js';
-import { playlistState, loadLocalPlaylists, importYouTubePlaylist, syncAllPlaylists, playNextTrack, filteredTracks, problemCounts } from './state/playlistState.js';
+import { playlistState, loadLocalPlaylists, importYouTubePlaylist, syncAllPlaylists, playNextTrack, filteredTracks, problemCounts, toggleSort } from './state/playlistState.js';
 
 // Auto-play siguiente canción cuando termine
 effect(() => {
@@ -18,12 +18,40 @@ effect(() => {
     // Resetear el flag ANTES de avanzar: si YouTube dispara ENDED
     // varias veces seguidas, solo avanzamos una canción.
     playerState.trackEndedFlag.value = 0;
+    if (playlistState.repeatMode.value === 'one') {
+      const current = playerState.currentTrack.value;
+      if (current && current.videoId) {
+        playTrack(current);
+        return;
+      }
+    }
     playNextTrack();
   }
 });
 
 export function App() {
   const [importUrl, setImportUrl] = useState('');
+  const [artistInput, setArtistInput] = useState('');
+
+  const addArtistFilterValue = (value) => {
+    const artist = value.trim();
+    if (!artist) return;
+    const exists = playlistState.artistFilters.value.some(item => item.toLowerCase() === artist.toLowerCase());
+    if (!exists) {
+      playlistState.artistFilters.value = [...playlistState.artistFilters.value, artist];
+    }
+    setArtistInput('');
+  };
+
+  const addArtistFilter = (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addArtistFilterValue(artistInput);
+  };
+
+  const removeArtistFilter = (artist) => {
+    playlistState.artistFilters.value = playlistState.artistFilters.value.filter(item => item !== artist);
+  };
 
   useEffect(() => {
     initYouTubePlayer();
@@ -38,6 +66,54 @@ export function App() {
       }
       runCascadingLinkCheck();
     });
+  }, []);
+
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      const target = event.target;
+      const isTyping = target instanceof HTMLElement && (
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+        target.isContentEditable
+      );
+      const modalOpen = settingsState.isSettingsOpen.value ||
+        playlistState.editingTrack.value ||
+        playlistState.repairTrack.value;
+
+      if (isTyping || modalOpen) return;
+
+      if (event.code === 'Space') {
+        event.preventDefault();
+        togglePlay();
+        return;
+      }
+
+      if (event.key === 'm' || event.key === 'M') {
+        event.preventDefault();
+        toggleMute();
+        return;
+      }
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        if (!playerState.currentTrack.value) return;
+        event.preventDefault();
+        const amount = event.key === 'ArrowLeft' ? -5 : 5;
+        const nextTime = Math.max(0, Math.min(
+          playerState.duration.value || Infinity,
+          playerState.currentTime.value + amount
+        ));
+        seekTo(nextTime);
+        return;
+      }
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        const amount = event.key === 'ArrowUp' ? 5 : -5;
+        setVolume(Math.max(0, Math.min(100, playerState.volume.value + amount)));
+      }
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
   }, []);
 
   const handleImport = async () => {
@@ -58,9 +134,31 @@ export function App() {
   };
 
   const activePlaylist = playlistState.activePlaylist.value;
+  const selectedArtists = new Set(playlistState.artistFilters.value.map(artist => artist.toLowerCase()));
+  const artistSearch = artistInput.trim().toLowerCase();
+  const uniqueArtists = [...new Map(
+    (activePlaylist?.tracks || [])
+      .map(track => track.artist?.trim())
+      .filter(Boolean)
+      .map(artist => [artist.toLowerCase(), artist])
+  ).values()]
+    .filter(artist => !selectedArtists.has(artist.toLowerCase()))
+    .sort((a, b) => {
+      const aMatches = artistSearch && a.toLowerCase().includes(artistSearch);
+      const bMatches = artistSearch && b.toLowerCase().includes(artistSearch);
+      return Number(bMatches) - Number(aMatches) || a.localeCompare(b);
+    })
+    .slice(0, 3);
   const visibleTracks = filteredTracks.value.slice(0, playlistState.visibleLimit.value);
   const counts = problemCounts.value;
   const totalProblems = counts.broken + counts.warning;
+
+  const formatUploadDate = (iso) => {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (isNaN(date)) return '—';
+    return date.toLocaleDateString();
+  };
 
   return (
     <div class="h-screen w-full flex flex-col bg-gray-900 text-gray-100">
@@ -138,16 +236,69 @@ export function App() {
               
               {/* Playlist Table */}
               <div class="px-8 pb-8 flex-1 flex flex-col">
-                <div class="flex items-center justify-between mb-4">
-                  <div class="relative w-64">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative w-64">
                     <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     <input 
                       type="text" 
                       value={playlistState.searchQuery.value}
                       onInput={(e) => playlistState.searchQuery.value = e.target.value}
                       placeholder="Buscar en la lista..."
-                      class="w-full bg-black/40 border border-white/10 rounded-full pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                      class="w-full bg-black/40 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                     />
+                    </div>
+                    <div class="relative">
+                      <div class="flex flex-wrap items-center gap-1.5 min-h-[42px] min-w-64 max-w-[32rem] bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 focus-within:border-blue-500 transition-colors">
+                      <svg class="w-5 h-5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        {playlistState.artistFilters.value.map(artist => (
+                        <span class="inline-flex items-center gap-1 rounded-full bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-xs text-blue-200">
+                          {artist}
+                          <button
+                            type="button"
+                            onClick={() => removeArtistFilter(artist)}
+                            class="text-blue-300 hover:text-white"
+                            title={`Quitar filtro ${artist}`}
+                            aria-label={`Quitar filtro ${artist}`}
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                          </button>
+                        </span>
+                        ))}
+                        <input
+                          type="text"
+                          value={artistInput}
+                          onInput={(e) => setArtistInput(e.target.value)}
+                          onKeyDown={addArtistFilter}
+                          placeholder={playlistState.artistFilters.value.length ? 'Añadir artista...' : 'Artista + Enter'}
+                          title="Escribe un artista y pulsa Enter"
+                          class="min-w-28 flex-1 bg-transparent py-1 text-sm text-white focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => addArtistFilterValue(artistInput)}
+                          disabled={!artistInput.trim()}
+                          class="shrink-0 p-1.5 rounded-md text-gray-400 hover:bg-blue-500/20 hover:text-blue-300 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                          title="Agregar artista"
+                          aria-label="Agregar artista"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-4.35-4.35m2.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </button>
+                      </div>
+                      {artistInput.trim() && uniqueArtists.length > 0 && (
+                        <div class="absolute left-0 right-0 top-full z-30 mt-2 rounded-lg border border-white/10 bg-gray-900 shadow-xl overflow-hidden">
+                          {uniqueArtists.map(artist => (
+                            <button
+                              type="button"
+                              onClick={() => addArtistFilterValue(artist)}
+                              class="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+                            >
+                              {artist}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {(totalProblems > 0) && (
                     <button
@@ -189,9 +340,49 @@ export function App() {
                   <thead class="border-b border-white/10 text-gray-400 uppercase text-xs">
                     <tr>
                       <th class="pb-3 w-12 text-center">#</th>
-                      <th class="pb-3">Título de Canción</th>
-                      <th class="pb-3">Artista Extraído</th>
-                      <th class="pb-3 text-right pr-3">Estado</th>
+                      <th class="pb-3">
+                        <button
+                          onClick={() => toggleSort('title')}
+                          class={`inline-flex items-center gap-1 uppercase hover:text-white transition-colors ${playlistState.sortKey.value === 'title' ? 'text-blue-400' : ''}`}
+                          title="Ordenar por título (clic: ascendente, descendente, desactivado)"
+                        >
+                          Título de Canción
+                          {playlistState.sortKey.value === 'title' ? (
+                            <svg class={`w-3 h-3 ${playlistState.sortDirection.value === 'desc' ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd"></path></svg>
+                          ) : (
+                            <svg class="w-3 h-3 text-gray-600" fill="currentColor" viewBox="0 0 24 24"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z"></path></svg>
+                          )}
+                        </button>
+                      </th>
+                      <th class="pb-3">
+                        <button
+                          onClick={() => toggleSort('artist')}
+                          class={`inline-flex items-center gap-1 uppercase hover:text-white transition-colors ${playlistState.sortKey.value === 'artist' ? 'text-blue-400' : ''}`}
+                          title="Ordenar por artista (clic: ascendente, descendente, desactivado)"
+                        >
+                          Artista Extraído
+                          {playlistState.sortKey.value === 'artist' ? (
+                            <svg class={`w-3 h-3 ${playlistState.sortDirection.value === 'desc' ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd"></path></svg>
+                          ) : (
+                            <svg class="w-3 h-3 text-gray-600" fill="currentColor" viewBox="0 0 24 24"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z"></path></svg>
+                          )}
+                        </button>
+                      </th>
+                      <th class="pb-3 min-w-[90px]">
+                        <button
+                          onClick={() => toggleSort('publishedAt')}
+                          class={`inline-flex items-center gap-1 uppercase hover:text-white transition-colors ${playlistState.sortKey.value === 'publishedAt' ? 'text-blue-400' : ''}`}
+                          title="Ordenar por fecha de publicación (clic: ascendente, descendente, desactivado)"
+                        >
+                          Subido
+                          {playlistState.sortKey.value === 'publishedAt' ? (
+                            <svg class={`w-3 h-3 ${playlistState.sortDirection.value === 'desc' ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd"></path></svg>
+                          ) : (
+                            <svg class="w-3 h-3 text-gray-600" fill="currentColor" viewBox="0 0 24 24"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z"></path></svg>
+                          )}
+                        </button>
+                      </th>
+                      <th class="pb-3 text-right pr-3 min-w-[90px]">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -212,15 +403,15 @@ export function App() {
                             <svg class="w-4 h-4 mx-auto text-white hidden group-hover:block" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
                           </td>
                           <td class="py-3">
-                            <div class="flex items-center gap-3">
-                              <img src={track.thumbnailUrl} class="w-10 h-10 rounded object-cover" />
-                              <span class={`font-medium ${isPlaying ? 'text-blue-400' : 'text-gray-200'}`}>
+                            <div class="flex items-center gap-3 min-w-0">
+                              <img src={track.thumbnailUrl} class="w-10 h-10 rounded object-cover shrink-0" />
+                              <span class={`font-medium truncate max-w-[340px] ${isPlaying ? 'text-blue-400' : 'text-gray-200'}`} title={track.title}>
                                 {track.title}
                               </span>
                             </div>
                           </td>
-                          <td class="py-3 rounded-r-lg flex items-center justify-between gap-2 pr-3">
-                            <span>{track.artist}</span>
+                          <td class="py-3 flex items-center justify-between gap-2 pr-3 min-w-0">
+                            <span class="truncate max-w-[200px]" title={track.artist}>{track.artist}</span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -232,7 +423,10 @@ export function App() {
                               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             </button>
                           </td>
-<td class="py-3 pr-3 text-right">
+                          <td class="py-3 text-xs whitespace-nowrap min-w-[90px]">
+                            <span title={track.publishedAt || ''}>{formatUploadDate(track.publishedAt)}</span>
+                          </td>
+                          <td class="py-3 pr-3 text-right rounded-r-lg min-w-[90px]">
                             <StatusBadge
                               status={track.removedFromSource ? 'removed' : track.status}
                               message={track.removedFromSource ? 'Ya no está en la playlist de YouTube, pero sigue guardada con su información' : track.statusMessage}
@@ -278,6 +472,16 @@ export function App() {
       <SettingsModal />
       <TrackEditModal />
       <TrackRepairModal />
+
+      {playlistState.toast.value && (
+        <div
+          role="status"
+          class="fixed top-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 min-w-[260px] justify-center px-5 py-3 rounded-xl bg-emerald-500/95 border border-emerald-300/70 text-sm font-semibold text-white shadow-[0_12px_35px_rgba(16,185,129,0.45)] animate-[fadeIn_0.2s_ease-out]"
+        >
+          <span class="flex items-center justify-center w-6 h-6 rounded-full bg-white/20 text-white font-bold">OK</span>
+          <span>{playlistState.toast.value}</span>
+        </div>
+      )}
     </div>
   );
 }

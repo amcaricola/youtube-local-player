@@ -25,7 +25,8 @@ const needsCheck = (track) =>
   track.status === 'unchecked' ||
   track.status === 'warning' ||
   !track.lastCheckedAt ||
-  Date.now() - track.lastCheckedAt > STALE_THRESHOLD_MS;
+  Date.now() - track.lastCheckedAt > STALE_THRESHOLD_MS ||
+  (!track.publishedAt && track.status !== 'broken');
 
 /**
  * Consulta el estado de un lote de videos y devuelve un mapa videoId -> { status, message }.
@@ -34,7 +35,7 @@ const needsCheck = (track) =>
  * @param {string} apiKey
  */
 const fetchVideoStatus = async (videoIds, apiKey) => {
-  const res = await fetch(`${BASE_URL}/videos?part=status&id=${videoIds.join(',')}&key=${apiKey}`);
+  const res = await fetch(`${BASE_URL}/videos?part=snippet,status&id=${videoIds.join(',')}&key=${apiKey}`);
   if (!res.ok) {
     throw new Error((await res.json()).error?.message || 'Error al verificar videos');
   }
@@ -46,17 +47,42 @@ const fetchVideoStatus = async (videoIds, apiKey) => {
   }
   for (const item of data.items || []) {
     const st = item.status;
+    let status = 'healthy';
+    let message = null;
     if (st.uploadStatus === 'rejected' || st.uploadStatus === 'failed') {
-      statuses[item.id] = { status: 'broken', message: `Video ${st.uploadStatus}` };
+      status = 'broken';
+      message = `Video ${st.uploadStatus}`;
     } else if (st.privacyStatus === 'private') {
-      statuses[item.id] = { status: 'warning', message: 'Video privado' };
+      status = 'warning';
+      message = 'Video privado';
     } else if (st.embeddable === false) {
-      statuses[item.id] = { status: 'warning', message: 'Reproducción embebida bloqueada' };
-    } else {
-      statuses[item.id] = { status: 'healthy', message: null };
+      status = 'warning';
+      message = 'Reproducción embebida bloqueada';
     }
+    statuses[item.id] = { status, message, snippet: item.snippet };
   }
   return statuses;
+};
+
+/**
+ * Construye las actualizaciones para un track a partir del resultado del checker,
+ * completando metadata ausente (fecha de subida, miniatura, canal) con la info
+ * completa que devuelve la API, sin pisar título/artista editados por el usuario.
+ */
+const buildTrackUpdates = (track, info) => {
+  const updates = {
+    status: info.status,
+    statusMessage: info.message,
+    lastCheckedAt: Date.now()
+  };
+  if (info.snippet) {
+    if (!track.publishedAt && info.snippet.publishedAt) updates.publishedAt = info.snippet.publishedAt;
+    if (!track.thumbnailUrl && info.snippet.thumbnails?.default?.url) updates.thumbnailUrl = info.snippet.thumbnails.default.url;
+    if ((!track.channelTitle || track.channelTitle === 'Desconocido') && info.snippet.channelTitle) {
+      updates.channelTitle = info.snippet.channelTitle;
+    }
+  }
+  return updates;
 };
 
 /**
@@ -92,11 +118,7 @@ export const runCascadingLinkCheck = async (manual = false) => {
           for (const [videoId, info] of Object.entries(results)) {
             const track = chunk.find(t => t.videoId === videoId);
             if (track) {
-              await updateTrackMetadata(playlist.id, track.id, {
-                status: info.status,
-                statusMessage: info.message,
-                lastCheckedAt: Date.now()
-              });
+              await updateTrackMetadata(playlist.id, track.id, buildTrackUpdates(track, info));
             }
           }
         } catch (error) {
@@ -129,11 +151,7 @@ export const checkTrackNow = async (playlistId, track) => {
   const results = await fetchVideoStatus([track.videoId], apiKey);
   const info = results[track.videoId];
   if (info) {
-    await updateTrackMetadata(playlistId, track.id, {
-      status: info.status,
-      statusMessage: info.message,
-      lastCheckedAt: Date.now()
-    });
+    await updateTrackMetadata(playlistId, track.id, buildTrackUpdates(track, info));
   }
   if (playerState.currentTrack.value?.id === track.id) {
     playerState.currentTrack.value = { ...playerState.currentTrack.value, status: info?.status || 'unchecked', statusMessage: info?.message || null };

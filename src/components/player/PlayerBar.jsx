@@ -1,11 +1,14 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { playerState, progressPercent } from '../../state/playerState.js';
-import { playlistState } from '../../state/playlistState.js';
+import { playlistState, playNextTrack, playPrevTrack } from '../../state/playlistState.js';
 import { togglePlay, setVolume, toggleMute, toggleFullscreen, seekTo, formatTime } from '../../api/iframePlayer.js';
 
 export function PlayerBar() {
   const progressBarRef = useRef(null);
   const volumeBarRef = useRef(null);
+  const fullscreenShellRef = useRef(null);
+  const hideControlsTimerRef = useRef(null);
+  const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
 
   const handleSeek = (e) => {
     if (!progressBarRef.current) return;
@@ -14,20 +17,128 @@ export function PlayerBar() {
     seekTo(percent * playerState.duration.value);
   };
 
-  const handleVolumeChange = (e) => {
-    if (!volumeBarRef.current) return;
-    const rect = volumeBarRef.current.getBoundingClientRect();
-    let percent = (e.clientX - rect.left) / rect.width;
-    percent = Math.max(0, Math.min(1, percent));
-    setVolume(percent * 100);
+  const handleVolumeDrag = (e) => {
+    e.preventDefault();
+    const el = volumeBarRef.current;
+    if (!el) return;
+    el.setPointerCapture?.(e.pointerId);
+    const update = (clientX) => {
+      const rect = el.getBoundingClientRect();
+      let percent = (clientX - rect.left) / rect.width;
+      percent = Math.max(0, Math.min(1, percent));
+      setVolume(Math.round(percent * 100));
+    };
+    update(e.clientX);
+    const onMove = (ev) => update(ev.clientX);
+    const onUp = (ev) => {
+      el.releasePointerCapture?.(ev.pointerId);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
   };
+
+  const handleFullscreenSeek = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    seekTo(percent * playerState.duration.value);
+  };
+
+  const revealFullscreenControls = () => {
+    setFullscreenControlsVisible(true);
+    clearTimeout(hideControlsTimerRef.current);
+    if (playerState.isFullscreen.value) {
+      hideControlsTimerRef.current = setTimeout(() => setFullscreenControlsVisible(false), 2500);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFullscreen = document.fullscreenElement === fullscreenShellRef.current;
+      playerState.isFullscreen.value = isFullscreen;
+      if (isFullscreen) revealFullscreenControls();
+      else {
+        clearTimeout(hideControlsTimerRef.current);
+        setFullscreenControlsVisible(true);
+      }
+    };
+
+    const hideOnWindowExit = () => {
+      if (playerState.isFullscreen.value) setFullscreenControlsVisible(false);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('visibilitychange', hideOnWindowExit);
+    window.addEventListener('blur', hideOnWindowExit);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('visibilitychange', hideOnWindowExit);
+      window.removeEventListener('blur', hideOnWindowExit);
+      clearTimeout(hideControlsTimerRef.current);
+    };
+  }, []);
 
   const currentTrack = playerState.currentTrack.value;
   const isPlaying = playerState.isPlaying.value;
   const isMuted = playerState.isMuted.value || playerState.volume.value === 0;
+  const repeatMode = playlistState.repeatMode.value;
+  const isFullscreen = playerState.isFullscreen.value;
 
   return (
     <footer class="h-20 glass-dark shrink-0 flex items-center justify-between px-6 z-20 transition-all relative">
+      <div
+        ref={fullscreenShellRef}
+        class={isFullscreen
+          ? 'fullscreen-player fixed inset-0 z-[100] bg-black'
+          : 'absolute left-[-9999px] top-0 w-[400px] h-[300px] overflow-hidden'}
+        onMouseMove={revealFullscreenControls}
+        onMouseLeave={() => isFullscreen && setFullscreenControlsVisible(false)}
+      >
+        <div id="yt-player-container" class="w-full h-full"></div>
+        {isFullscreen && (
+          <div
+            class="absolute inset-0 z-10"
+            onMouseMove={revealFullscreenControls}
+            aria-hidden="true"
+          ></div>
+        )}
+        {isFullscreen && fullscreenControlsVisible && (
+          <div class="absolute inset-x-0 bottom-0 z-20 p-5 pt-16 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none">
+            <div
+              class="h-1.5 w-full rounded-full bg-white/30 cursor-pointer mb-4 overflow-hidden pointer-events-auto"
+              onClick={handleFullscreenSeek}
+            >
+              <div class="h-full bg-red-500" style={{ width: `${progressPercent.value}%` }}></div>
+            </div>
+            <div class="flex items-center gap-5 text-white pointer-events-auto">
+              <button onClick={playPrevTrack} class="hover:text-red-300 transition-colors" title="Anterior" aria-label="Anterior">
+                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"></path></svg>
+              </button>
+              <button onClick={togglePlay} class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center" title={isPlaying ? 'Pausar' : 'Reproducir'} aria-label={isPlaying ? 'Pausar' : 'Reproducir'}>
+                {isPlaying
+                  ? <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+                  : <svg class="w-5 h-5 fill-current ml-1" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>}
+              </button>
+              <button onClick={playNextTrack} class="hover:text-red-300 transition-colors" title="Siguiente" aria-label="Siguiente">
+                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"></path></svg>
+              </button>
+              <button onClick={toggleMute} class="ml-auto hover:text-red-300 transition-colors" title={isMuted ? 'Activar sonido' : 'Silenciar'} aria-label={isMuted ? 'Activar sonido' : 'Silenciar'}>
+                {isMuted
+                  ? <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM4.27 3L3 4.27 19.73 21 21 19.73 4.27 3z"></path></svg>
+                  : <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"></path></svg>}
+              </button>
+              <span class="text-xs text-gray-300">{formatTime(playerState.currentTime.value)} / {formatTime(playerState.duration.value)}</span>
+              <button onClick={() => toggleFullscreen(fullscreenShellRef.current)} class="hover:text-red-300 transition-colors" title="Salir de pantalla completa" aria-label="Salir de pantalla completa">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 9V5m0 4H5m10 6v4m0-4h4M5 15v4h4M19 9V5h-4"></path></svg>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Track Info */}
       <div class="flex items-center gap-4 w-1/3">
         <div class="w-12 h-12 bg-gray-800 rounded-md overflow-hidden relative shadow-md">
@@ -43,13 +154,13 @@ export function PlayerBar() {
           <div class="text-sm font-semibold text-gray-100 truncate">
             {currentTrack?.title || "Sin Canción"}
           </div>
-          <div class="flex items-center gap-2 text-xs truncate">
-            <span class="text-gray-400 truncate">{currentTrack?.artist || "Desconocido"}</span>
+          <div class="flex items-center gap-2 text-xs text-gray-400 min-w-0">
+            <span class="truncate">{currentTrack?.artist || "Desconocido"}</span>
             {playerState.isBuffering.value && currentTrack && (
-              <span class="shrink-0 text-gray-500">Cargando video...</span>
+              <span class="shrink-0 text-[10px] text-gray-500">Cargando video...</span>
             )}
             {playerState.errorMessage.value && (
-              <span class="shrink-0 max-w-48 truncate text-red-300" title={playerState.errorMessage.value}>
+              <span class="shrink-0 max-w-44 truncate text-[10px] text-red-300" title={playerState.errorMessage.value}>
                 No se pudo reproducir
               </span>
             )}
@@ -60,13 +171,17 @@ export function PlayerBar() {
       {/* Controls */}
       <div class="flex flex-col items-center w-1/3">
         <div class="flex items-center gap-6 mb-2">
-          
-          <button onClick={() => {
-              import('../../state/playlistState.js').then(({ toggleShuffle }) => toggleShuffle());
-            }} 
-            class={`transition-colors ${playlistState.isShuffle.value ? 'text-blue-500 hover:text-blue-400' : 'text-gray-500 hover:text-white'}`} 
-            title="Aleatorio (Shuffle)">
-            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"></path></svg>
+
+          <button
+            onClick={() => import('../../state/playlistState.js').then(({ cycleRepeatMode }) => cycleRepeatMode())}
+            class={`relative transition-colors ${repeatMode !== 'off' ? 'text-blue-500 hover:text-blue-400' : 'text-gray-500 hover:text-white'}`}
+            title={repeatMode === 'one' ? 'Repetir canción (clic para cambiar)' : repeatMode === 'all' ? 'Repetir lista (clic para cambiar)' : 'Repetir desactivado (clic para cambiar)'}
+            aria-label="Cambiar modo de repetición"
+          >
+            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"></path></svg>
+            {repeatMode === 'one' && (
+              <span class="absolute -top-1 -right-1 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-blue-500 text-[8px] font-bold text-white">1</span>
+            )}
           </button>
 
           <button onClick={() => {
@@ -105,6 +220,14 @@ export function PlayerBar() {
             }} 
             class="text-gray-400 hover:text-white transition-colors" title="Siguiente">
             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"></path></svg>
+          </button>
+
+          <button onClick={() => {
+              import('../../state/playlistState.js').then(({ toggleShuffle }) => toggleShuffle());
+            }} 
+            class={`transition-colors ${playlistState.isShuffle.value ? 'text-blue-500 hover:text-blue-400' : 'text-gray-500 hover:text-white'}`} 
+            title="Aleatorio (Shuffle)">
+            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"></path></svg>
           </button>
         </div>
         
@@ -146,16 +269,23 @@ export function PlayerBar() {
         </button>
         <div 
           ref={volumeBarRef}
-          class="w-24 h-1.5 bg-gray-700/50 rounded-full overflow-hidden cursor-pointer group"
-          onClick={handleVolumeChange}
+          class="relative w-28 h-5 flex items-center cursor-pointer group select-none touch-none"
+          onPointerDown={handleVolumeDrag}
+          title="Arrastra para ajustar el volumen"
         >
-          <div 
-            class="h-full bg-white group-hover:bg-gray-200 transition-all relative"
-            style={{ width: `${playerState.volume.value}%` }}
-          ></div>
+          <div class="w-full h-1.5 bg-gray-700/50 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-white group-hover:bg-gray-200 transition-colors"
+              style={{ width: `${playerState.volume.value}%` }}
+            ></div>
           </div>
+          <div
+            class="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-md ring-1 ring-black/30 group-hover:scale-110 transition-transform"
+            style={{ left: `calc(${playerState.volume.value}% - 6px)` }}
+          ></div>
+        </div>
         <button
-          onClick={toggleFullscreen}
+          onClick={() => toggleFullscreen(fullscreenShellRef.current)}
           disabled={!currentTrack || !playerState.isReady.value}
           class="text-gray-400 hover:text-white transition-colors disabled:opacity-40"
           title="Ver video en pantalla completa"

@@ -71,6 +71,7 @@ youtube-player/
  * @property {string} artist - Custom user-defined artist name
  * @property {string} channelTitle - Original uploader/channel name
  * @property {string} thumbnailUrl - Album art / video thumbnail URL
+ * @property {string|null} publishedAt - Publication date of the video in YouTube (ISO 8601, null if unknown)
  * @property {number} durationSeconds - Track duration in seconds
  * @property {'healthy'|'warning'|'broken'|'unchecked'} status - Link health status
  * @property {string|null} statusMessage - Reason if warning/broken (e.g. "Private video", "Deleted")
@@ -152,40 +153,40 @@ youtube-player/
 
 ### Phase 1: Project Setup & Storage Engine (Session 1)
 
-- [ ] Initialize Vite + Preact project structure.
-- [ ] Configure Tailwind CSS, Google Fonts (Inter/Outfit), and basic dark/glassmorphism design system.
-- [ ] Build `StorageAdapter` interface, `IndexedDBAdapter` & `LocalStorageAdapter`.
-- [ ] Create initial state store using `@preact/signals`.
+- [x] Initialize Vite + Preact project structure.
+- [x] Configure Tailwind CSS and the dark/glassmorphism design system.
+- [ ] Build `StorageAdapter` interface, `IndexedDBAdapter` & `LocalStorageAdapter` (the interface and LocalStorage adapter are complete; IndexedDB remains pending).
+- [x] Create initial state store using `@preact/signals`.
 
 ### Phase 2: YouTube API & Player Integration (Session 2)
 
-- [ ] Build `iframePlayer.js` wrapper around YouTube Iframe API.
-- [ ] Create persistent bottom Audio/Video Player component (Play/Pause, Seekbar, Volume, Mute, Fullscreen embed toggle).
-- [ ] Build API Key configuration UI & YouTube Data API fetcher for public/private playlists.
+- [x] Build `iframePlayer.js` wrapper around YouTube Iframe API.
+- [x] Create persistent bottom Audio/Video Player component (Play/Pause, Seekbar, Volume, Mute, Fullscreen embed toggle).
+- [x] Build API Key configuration UI & YouTube Data API fetcher for public playlists (private playlist OAuth remains out of scope).
 
 ### Phase 3: Track Management & Metadata Editor (Session 3)
 
-- [ ] Build Playlist view, track list grid/table with drag/sort or reorder support.
-- [ ] Implement `metadataParser.js` (auto-extract artist & song title).
-- [ ] Add track editor modal (rename title, edit artist, swap video link).
+- [x] Build Playlist view and track list table with sorting. Drag and drop reordering was intentionally removed.
+- [x] Implement `metadataParser.js` (auto-extract artist & song title).
+- [x] Add track editor modal (rename title, edit artist, swap video link through the repair modal).
 
 ### Phase 4: Custom Shuffle & Filtered Playback (Session 4)
 
-- [ ] Build smart Fisher-Yates shuffle engine with unplayed queue history.
-- [ ] Implement real-time title/artist search filter.
-- [ ] Connect search filtering directly to playback queue engine.
+- [x] Build smart Fisher-Yates shuffle engine with unplayed queue history.
+- [x] Implement real-time title/artist search filter.
+- [x] Connect search filtering directly to playback queue engine.
 
 ### Phase 5: Link Integrity Checker & Repair UI (Session 5)
 
-- [ ] Implement cascading background link checker worker (`linkChecker.js`).
-- [ ] Add visual badges (Healthy, Warning, Broken) in track lists.
-- [ ] Create "Broken Link Repair Modal" to search YouTube and update video ID without losing custom metadata.
+- [x] Implement cascading background link checker worker (`linkChecker.js`).
+- [x] Add visual badges (Healthy, Warning, Broken) in track lists.
+- [x] Create "Broken Link Repair Modal" to search YouTube and update video ID without losing custom metadata.
 
 ### Phase 6: Polish, Testing & Export/Import (Session 6)
 
-- [ ] Add JSON backup export & import for offline database safety.
-- [ ] Add micro-animations, keyboard shortcuts (Space bar play/pause, arrows seek/volume, 'M' mute).
-- [ ] Perform full end-to-end testing and code verification.
+- [x] Add JSON backup export & import for offline database safety.
+- [x] Add keyboard shortcuts (Space bar play/pause, arrows seek/volume, 'M' mute). Micro-animations are already present.
+- [x] Add automated regression, integration, and browser-level tests for metadata editing, artist suggestions, JSON backup restore, and keyboard shortcuts. Manual visual verification remains pending.
 
 ---
 

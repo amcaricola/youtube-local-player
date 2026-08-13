@@ -11,33 +11,74 @@ export const playlistState = {
   isLoading: signal(false),
   error: signal(null),
   searchQuery: signal(''),
+  artistFilters: signal([]),
   problemFilter: signal(false),
   isShuffle: signal(false),
+  repeatMode: signal('off'),
   shuffledQueue: signal([]),
   playedHistory: signal([]),
   editingTrack: signal(null),
   repairTrack: signal(null),
+  toast: signal(null),
   isSyncing: signal(false),
   syncNotice: signal(null),
-  visibleLimit: signal(100)
+  visibleLimit: signal(100),
+  sortKey: signal(null),
+  sortDirection: signal('asc')
 };
 
 export const filteredTracks = computed(() => {
   const active = playlistState.activePlaylist.value;
   if (!active) return [];
   const query = playlistState.searchQuery.value.trim().toLowerCase();
+  const artistFilters = playlistState.artistFilters.value.map(name => name.toLowerCase());
 
   let tracks = active.tracks;
   if (playlistState.problemFilter.value) {
     tracks = tracks.filter(t => t.status === 'broken' || t.status === 'warning');
   }
-  if (!query) return tracks;
-  
-  return tracks.filter(t => 
-    t.title.toLowerCase().includes(query) || 
-    t.artist.toLowerCase().includes(query)
-  );
+if (artistFilters.length > 0) {
+    tracks = tracks.filter(t => artistFilters.some(name => t.artist.toLowerCase().includes(name)));
+  }
+  if (query) {
+    tracks = tracks.filter(t =>
+      t.title.toLowerCase().includes(query) ||
+      t.artist.toLowerCase().includes(query)
+    );
+  }
+
+  const sortKey = playlistState.sortKey.value;
+  if (sortKey && (sortKey === 'title' || sortKey === 'artist' || sortKey === 'publishedAt')) {
+    const dir = playlistState.sortDirection.value === 'desc' ? -1 : 1;
+    tracks = [...tracks].sort((a, b) => {
+      if (sortKey === 'publishedAt') {
+        const av = a.publishedAt || '';
+        const bv = b.publishedAt || '';
+        if (!av && !bv) return 0;
+        if (!av) return 1;
+        if (!bv) return -1;
+        return av.localeCompare(bv) * dir;
+      }
+      const av = (a[sortKey] || '').toString().toLowerCase();
+      const bv = (b[sortKey] || '').toString().toLowerCase();
+      return av.localeCompare(bv) * dir;
+    });
+  }
+
+  return tracks;
 });
+
+export const toggleSort = (key) => {
+  if (playlistState.sortKey.value !== key) {
+    playlistState.sortKey.value = key;
+    playlistState.sortDirection.value = 'asc';
+  } else if (playlistState.sortDirection.value === 'asc') {
+    playlistState.sortDirection.value = 'desc';
+  } else {
+    playlistState.sortKey.value = null;
+    playlistState.sortDirection.value = 'asc';
+  }
+};
 
 export const problemCounts = computed(() => {
   const active = playlistState.activePlaylist.value;
@@ -50,6 +91,15 @@ export const problemCounts = computed(() => {
   }
   return { broken, warning };
 });
+
+let toastTimeout = null;
+export const showToast = (message) => {
+  playlistState.toast.value = message;
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    playlistState.toast.value = null;
+  }, 3000);
+};
 
 export const generateShuffle = (tracks, excludeTrackId = null) => {
   let queue = tracks.map(t => t.id);
@@ -75,6 +125,13 @@ export const toggleShuffle = () => {
   }
 };
 
+export const cycleRepeatMode = () => {
+  const modes = ['off', 'all', 'one'];
+  const current = playlistState.repeatMode.value;
+  const next = modes[(modes.indexOf(current) + 1) % modes.length];
+  playlistState.repeatMode.value = next;
+};
+
 // Cuando el filtro de búsqueda cambia con shuffle activo, regenera la cola
 // para que el shuffle solo reproduzca canciones de la lista filtrada actual.
 effect(() => {
@@ -90,9 +147,24 @@ effect(() => {
 // (La paginación es solo visual: shuffle y filtrado usan la lista completa)
 effect(() => {
   playlistState.searchQuery.value;
+  playlistState.artistFilters.value;
   playlistState.problemFilter.value;
   playlistState.activePlaylist.value;
   playlistState.visibleLimit.value = 100;
+});
+
+// Al cambiar de playlist, los filtros y el orden vuelven a su estado inicial.
+// Solo se reinicia cuando cambia el id de la playlist (no al reemplazarse en una sincronización).
+let lastFilterPlaylistId = null;
+effect(() => {
+  const activeId = playlistState.activePlaylist.value?.id ?? null;
+  if (activeId === lastFilterPlaylistId) return;
+  lastFilterPlaylistId = activeId;
+  playlistState.searchQuery.value = '';
+  playlistState.artistFilters.value = [];
+  playlistState.problemFilter.value = false;
+  playlistState.sortKey.value = null;
+  playlistState.sortDirection.value = 'asc';
 });
 
 /**
@@ -123,6 +195,7 @@ const mapRawItemsToTracks = (rawItems) => rawItems
       artist: artist,
       channelTitle: item.snippet.videoOwnerChannelTitle || 'Desconocido',
       thumbnailUrl: item.snippet.thumbnails?.default?.url || '',
+      publishedAt: item.contentDetails?.videoPublishedAt || null,
       status: 'unchecked',
       addedAt: Date.now()
     };
@@ -317,11 +390,14 @@ export const playNextTrack = () => {
 
   import('../api/iframePlayer.js').then(({ playTrack }) => {
     if (playlistState.isShuffle.value) {
-      if (playlistState.shuffledQueue.value.length === 0) {
+      let queue = [...playlistState.shuffledQueue.value];
+      if (queue.length === 0) {
+        // La cola se agotó: solo se vuelve a llenar si el modo lo permite
+        if (playlistState.repeatMode.value === 'off') return;
         playlistState.shuffledQueue.value = generateShuffle(tracks, current?.id);
         playlistState.playedHistory.value = [];
+        queue = [...playlistState.shuffledQueue.value];
       }
-      const queue = [...playlistState.shuffledQueue.value];
       let nextId = queue.shift();
       // Saltar IDs duplicados del video recién terminado para evitar un loop ENDED->loadVideoById
       while (nextId && current && nextId === current.id) {
@@ -344,7 +420,7 @@ export const playNextTrack = () => {
       const currentIndex = tracks.findIndex(t => t.id === current.id);
       if (currentIndex >= 0 && currentIndex < tracks.length - 1) {
         playTrack(tracks[currentIndex + 1]);
-      } else {
+      } else if (playlistState.repeatMode.value === 'all') {
         // Loop back to start
         playTrack(tracks[0]);
       }

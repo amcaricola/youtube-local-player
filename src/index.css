@@ -31,3 +31,9 @@
     @apply bg-gray-600 rounded-full hover:bg-gray-500 transition-colors;
   }
 }
+
+.fullscreen-player #yt-player-container,
+.fullscreen-player #yt-player-container iframe {
+  width: 100% !important;
+  height: 100% !important;
+}

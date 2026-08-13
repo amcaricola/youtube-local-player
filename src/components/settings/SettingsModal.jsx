@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { settingsState } from '../../state/settingsState.js';
 import { checkApiKey } from '../../api/youtubeApi.js';
 import { runCascadingLinkCheck, linkCheckerState } from '../../api/linkChecker.js';
-import { playlistState, syncAllPlaylists, deletePlaylist } from '../../state/playlistState.js';
+import { playlistState, showToast, syncAllPlaylists, deletePlaylist, loadLocalPlaylists } from '../../state/playlistState.js';
+import storage from '../../storage/index.js';
 
 export function SettingsModal() {
   const [inputKey, setInputKey] = useState(settingsState.apiKey.value);
@@ -12,10 +13,20 @@ export function SettingsModal() {
   const [isValidated, setIsValidated] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showStatusDetails, setShowStatusDetails] = useState(false);
+  const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 5 * 1024 * 1024 });
+  const importInputRef = useRef(null);
 
   useEffect(() => {
     setConfirmDelete(false);
     setShowStatusDetails(false);
+    if (settingsState.isSettingsOpen.value) {
+      let total = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        total += key.length + (localStorage.getItem(key) || '').length;
+      }
+      setStorageUsage({ used: total * 2, limit: 5 * 1024 * 1024 });
+    }
   }, [settingsState.isSettingsOpen.value]);
 
   const handleManualSync = async () => {
@@ -38,6 +49,43 @@ export function SettingsModal() {
     }
     setConfirmDelete(false);
     await deletePlaylist(active.id);
+  };
+
+  const handleExport = async () => {
+    try {
+      const jsonData = await storage.exportData();
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `youtube-player-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast('Respaldo exportado correctamente');
+    } catch (error) {
+      console.error('Error al exportar el respaldo:', error);
+      setStatus({ type: 'error', msg: 'No se pudo exportar el respaldo.' });
+    }
+  };
+
+  const handleImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      await storage.importData(await file.text());
+      await loadLocalPlaylists();
+      playlistState.activePlaylist.value = playlistState.playlists.value[0] || null;
+      showToast('Respaldo importado correctamente');
+      setStatus({ type: 'success', msg: 'Datos restaurados correctamente.' });
+    } catch (error) {
+      console.error('Error al importar el respaldo:', error);
+      setStatus({ type: 'error', msg: 'El archivo no es un respaldo válido.' });
+    } finally {
+      event.target.value = '';
+    }
   };
 
   const handleValidate = async () => {
@@ -77,6 +125,8 @@ export function SettingsModal() {
     setConfirmDelete(false);
     setShowStatusDetails(false);
   };
+
+  const storagePercent = Math.min(100, Math.round((storageUsage.used / storageUsage.limit) * 100));
 
   if (!settingsState.isSettingsOpen.value) return null;
 
@@ -225,6 +275,50 @@ export function SettingsModal() {
             >
               <span class={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${settingsState.autoCheckLinks.value ? 'left-[22px]' : 'left-0.5'}`}></span>
             </button>
+          </div>
+
+          <div class="border-t border-white/10 pt-4">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold text-gray-300">Almacenamiento Local</h3>
+              <span class="text-xs text-gray-400">
+                {(storageUsage.used / (1024 * 1024)).toFixed(1)} MB / {(storageUsage.limit / (1024 * 1024)).toFixed(0)} MB
+              </span>
+            </div>
+            <div class="h-2 bg-gray-700/50 rounded-full overflow-hidden">
+              <div
+                class={`h-full rounded-full transition-all ${
+                  storagePercent >= 90 ? 'bg-red-500' : storagePercent >= 70 ? 'bg-amber-400' : 'bg-green-500'
+                }`}
+                style={{ width: `${storagePercent}%` }}
+              ></div>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">{storagePercent}% usado de la capacidad habitual del navegador.</p>
+            {storagePercent >= 90 && (
+              <p class="text-xs text-red-300 mt-1">
+                El almacenamiento está casi lleno. Considera exportar un respaldo o eliminar playlists para liberar espacio.
+              </p>
+            )}
+            <div class="grid grid-cols-2 gap-2 mt-4">
+              <button
+                onClick={handleExport}
+                class="py-2 rounded-lg bg-blue-500/15 border border-blue-400/30 text-blue-200 hover:bg-blue-500/30 transition-colors text-sm font-medium"
+              >
+                Exportar JSON
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                class="py-2 rounded-lg bg-purple-500/15 border border-purple-400/30 text-purple-200 hover:bg-purple-500/30 transition-colors text-sm font-medium"
+              >
+                Importar JSON
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImport}
+                class="hidden"
+              />
+            </div>
           </div>
 
           <div>
