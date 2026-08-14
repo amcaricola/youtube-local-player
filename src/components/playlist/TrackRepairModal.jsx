@@ -57,14 +57,18 @@ export function TrackRepairModal() {
     setSaving(true);
     setError('');
     try {
+      // Solo se conserva el nuevo enlace: título y artista del usuario no se tocan,
+      // y la metadata de la API (fecha, miniatura, duración) la repuebla checkTrackNow.
       const applied = {
         ...track,
         videoId: item.videoId,
-        originalTitle: item.title,
-        channelTitle: item.channelTitle || track.channelTitle,
         thumbnailUrl: item.thumbnailUrl || track.thumbnailUrl,
+        publishedAt: null,
+        durationSeconds: null,
         status: 'unchecked',
         statusMessage: null,
+        brokenAt: null,
+        metadataFetchedAt: 0,
         lastCheckedAt: null
       };
       await updateTrackMetadata(active.id, track.id, applied);

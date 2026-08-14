@@ -49,6 +49,14 @@ export class StorageAdapter {
   }
 
   /**
+   * Deletes all stored data (user request / data retention compliance).
+   * @returns {Promise<void>}
+   */
+  async clearAll() {
+    throw new Error('Method not implemented.');
+  }
+
+  /**
    * Exports the entire database as a JSON string.
    * @returns {Promise<string>}
    */

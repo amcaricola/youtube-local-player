@@ -61,23 +61,25 @@ youtube-player/
 
 ### Track Model
 
+> **ToS data-retention policy (Developer Policies III.E.4):** `originalTitle` and `channelTitle` are **never persisted** — they are used in memory during parsing and discarded. API data (`thumbnailUrl`, `publishedAt`, `durationSeconds`) must be refreshed at least every 30 days (the link checker does this automatically in every sweep) and is purged when a broken link's recovery window expires. `title`/`artist` are user data (parsed once, freely editable) and are kept forever; `videoId` is kept as the link/anchor to the YouTube resource. The canonical typedef lives in `src/types/player.js`.
+
 ```js
 /**
  * @typedef {Object} Track
  * @property {string} id - Internal UUID or YouTube Video ID
- * @property {string} videoId - YouTube Video ID (e.g. "dQw4w9WgXcQ")
- * @property {string} originalTitle - Original title from YouTube
- * @property {string} title - Custom user-defined song title
- * @property {string} artist - Custom user-defined artist name
- * @property {string} channelTitle - Original uploader/channel name
- * @property {string} thumbnailUrl - Album art / video thumbnail URL
- * @property {string|null} publishedAt - Publication date of the video in YouTube (ISO 8601, null if unknown)
- * @property {number} durationSeconds - Track duration in seconds
+ * @property {string} videoId - YouTube Video ID (e.g. "dQw4w9WgXcQ"); link to the resource
+ * @property {string} title - Song title (parsed from YouTube; user-editable; user data)
+ * @property {string} artist - Artist name (parsed from YouTube; user-editable; user data)
+ * @property {string} thumbnailUrl - Video thumbnail URL (API data; refreshable/purgable)
+ * @property {string|null} publishedAt - Publication date in YouTube (ISO 8601; API data; purgable)
+ * @property {number|null} durationSeconds - Track duration in seconds (API data; purgable)
  * @property {'healthy'|'warning'|'broken'|'unchecked'} status - Link health status
  * @property {string|null} statusMessage - Reason if warning/broken (e.g. "Private video", "Deleted")
+ * @property {number|null} brokenAt - Timestamp when the broken link was first detected (null otherwise)
+ * @property {number} metadataFetchedAt - Timestamp of last successful API metadata refresh (0 = pending)
  * @property {boolean} [removedFromSource] - True if the track is no longer present in the original YouTube playlist (sync-detected; track stays local with its metadata)
  * @property {number} addedAt - Timestamp when added
- * @property {number} lastCheckedAt - Timestamp of last integrity check
+ * @property {number|null} lastCheckedAt - Timestamp of last integrity check
  */
 ```
 
@@ -107,9 +109,12 @@ youtube-player/
   - `savePlaylist(playlist: Playlist): Promise<void>`
   - `deletePlaylist(id: string): Promise<void>`
   - `updateTrack(playlistId: string, trackId: string, updates: Partial<Track>): Promise<void>`
+  - `clearAll(): Promise<void>` — full local data wipe (user-requested deletion, Developer Policies III.E.4.g)
   - `exportData(): Promise<string>`
   - `importData(jsonData: string): Promise<void>`
 - Implementation switch via `storage/index.js` allowing seamless replacement with MongoDB/PostgreSQL backends without touching UI components.
+- **Backup schema v2 (minimal user-library):** exports only `{ videoId, title, artist, addedAt, removedFromSource }` per track (+ playlist id/title/description/youtubePlaylistId). No YouTube API metadata travels in the file, so backups can be shared (e.g. Reddit) without redistributing API data. On import every track is marked `status: 'unchecked'` + `metadataFetchedAt: 0`, and the link-checker sweep repopulates thumbnails/dates/durations directly from YouTube under the importer's own credentials/quota.
+- `LocalStorageAdapter.getPlaylists()` performs a silent migration of legacy tracks (strips persisted `originalTitle`/`channelTitle`, backfills `brokenAt`/`metadataFetchedAt`) and persists the clean model.
 
 ### 2. Smart Metadata Parsing & Editing
 
@@ -136,14 +141,16 @@ youtube-player/
 ### 5. Cascading Link Integrity Checker
 
 - Runs a single sweep **once per session** (startup + after imports), politely paced to respect API quotas: **one batch of 50 video IDs per request, 1 batch per minute** (5s interval in manual mode).
-- Only re-checks tracks that are `unchecked`, in `warning`, or stale (> 7 days since `lastCheckedAt`), so each session's sweep is light and doesn't repeat work.
-- Checks availability via YouTube API (`videos.list?part=status`) or IFrame Player error triggers (errors 2, 5, 100, 101, 150 - the latter auto-marks the current track).
+- Only re-checks tracks that are `unchecked`, in `warning`, stale (> 1 day since `lastCheckedAt`), with API metadata near the 30-day limit, or broken with an expired recovery window (pending purge) — so each session's sweep is light and doesn't repeat work. **Each track is queried at most once per day**: if it was checked today, it is skipped even across page reloads (avoids hammering the API).
+- Checks availability via YouTube API (`videos.list?part=status,snippet,contentDetails`, same quota cost) or IFrame Player error triggers (errors 2, 5, 100, 101, 150 - the latter auto-marks the current track).
+- **Every sweep doubles as a metadata refresh** (Developer Policies III.E.4): for live videos it renews `publishedAt`/`thumbnailUrl`/`durationSeconds` (and `metadataFetchedAt`) without ever touching user-edited `title`/`artist`. This keeps API data under the 30-day retention rule automatically.
+- **Broken-link recovery window:** on first detection a track gets `brokenAt`; a badge tooltip shows the remaining days (`RECOVERY_WINDOW_MS` = 23 conservative days, since last valid metadata was ≤7 days old). If the link isn't repaired in time, the sweep purges the API metadata (thumbnail/date/duration) — `videoId`, `title` and `artist` are always kept so the user can still find a replacement.
 - Flags unavailable tracks in UI with icon-only badges (tooltip on hover) and presents a quick "Find Replacement Link" option (search + swap videoId without losing custom metadata).
 
 ### 6. Playlist Sync with YouTube (startup refresh)
 
 - Local playlists that have a `youtubePlaylistId` can be re-synced against YouTube (toggle `autoSyncPlaylists`, default ON). Manual actions (link check, sync, delete playlist) live in the Settings modal under "Mantenimiento de Playlists" (delete uses two-step confirm).
-- On sync: **new tracks added to the YouTube playlist are appended at the end** (with parsed metadata, `status: 'unchecked'`), and tracks that were **removed from YouTube are flagged `removedFromSource: true` but stay local** with all custom metadata intact (nothing is lost).
+- On sync: **new tracks added to the YouTube playlist are appended at the end** (title/artist parsed in memory from the API response — original title/channel are discarded, not persisted; `status: 'unchecked'`), and tracks that were **removed from YouTube are flagged `removedFromSource: true` but stay local** with all custom metadata intact (nothing is lost).
 - Sync never overwrites user-edited title/artist; it only updates playlist title/thumbnail/description.
 - Re-adding songs to the *original* YouTube playlist requires OAuth (write API, out of scope with API key only) — the UI offers opening the video on YouTube to re-add manually.
 

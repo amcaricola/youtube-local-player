@@ -30,7 +30,7 @@ function Icon({ status }) {
   return <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clipRule="evenodd"></path></svg>;
 }
 
-export function StatusBadge({ status = 'unchecked', message = '', onClick }) {
+export function StatusBadge({ status = 'unchecked', message = '', recoveryDaysLeft = null, onClick }) {
   const canRepair = status === 'broken' || status === 'warning' || status === 'removed';
   return (
     <span class="relative inline-flex group/badge align-middle">
@@ -44,6 +44,17 @@ export function StatusBadge({ status = 'unchecked', message = '', onClick }) {
       <div class="absolute bottom-full mb-2 right-0 z-50 px-3 py-2 rounded-lg bg-gray-900/95 border border-white/10 text-xs whitespace-normal max-w-[280px] text-left opacity-0 pointer-events-none group-hover/badge:opacity-100 transition-opacity shadow-2xl">
         <div class="font-semibold text-gray-100">{LABELS[status] || 'Sin verificar'}</div>
         {message && <div class="text-gray-300">{message}</div>}
+        {status === 'broken' && recoveryDaysLeft !== null && (
+          recoveryDaysLeft > 0 ? (
+            <div class="text-amber-300">
+              Repara antes de {recoveryDaysLeft}d: después se elimina la metadata de YouTube (fecha, miniatura, duración). Tu título y artista se conservan.
+            </div>
+          ) : (
+            <div class="text-gray-400">
+              Metadata de YouTube eliminada por antigüedad. Conservas tu título y artista para repararla.
+            </div>
+          )
+        )}
         {canRepair && <div class="text-blue-400">{status === 'removed' ? 'Clic para abrir en YouTube' : 'Clic para buscar reemplazo'}</div>}
       </div>
     </span>

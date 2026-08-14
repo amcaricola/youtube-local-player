@@ -23,8 +23,11 @@ export function TrackEditModal() {
 
   if (!track) return null;
 
+  // Re-deriva artista/título desde los valores actuales (ej. si el usuario pegó
+  // "Artista - Canción" manualmente). El título original de YouTube ya no se
+  // conserva en local por la política de retención de la API.
   const handleReparse = () => {
-    const parsed = parseTrackMetadata(track.originalTitle || track.title, track.channelTitle);
+    const parsed = parseTrackMetadata(track.title, track.artist);
     setTitle(parsed.title);
     setArtist(parsed.artist);
   };
@@ -61,7 +64,7 @@ export function TrackEditModal() {
     setSaving(true);
     setError('');
     try {
-      const removedTitle = track.title || track.originalTitle;
+      const removedTitle = track.title;
       await removeTrackFromPlaylist(active.id, track.id);
       playlistState.editingTrack.value = null;
       showToast(`Se eliminó "${removedTitle}"`);
@@ -83,7 +86,7 @@ export function TrackEditModal() {
             )}
             <div>
               <h2 class="text-xl font-bold">Editar Canción</h2>
-              <p class="text-xs text-gray-400 truncate max-w-[260px]">{track.originalTitle || track.title}</p>
+              <p class="text-xs text-gray-400 truncate max-w-[260px]">{track.artist} — {track.title}</p>
             </div>
           </div>
           <button
@@ -159,16 +162,14 @@ export function TrackEditModal() {
             </div>
           </div>
 
-          {(track.originalTitle || track.channelTitle) && (
-            <button
-              onClick={handleReparse}
-              class="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
-              title="Re-derivar artista y título desde el título original de YouTube"
-            >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-              Limpiar con el parser automático
-            </button>
-          )}
+          <button
+            onClick={handleReparse}
+            class="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+            title="Re-derivar artista y título desde los valores actuales (ej. 'Artista - Canción')"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            Limpiar con el parser automático
+          </button>
         </div>
 
         <div class="flex gap-3 mt-6">

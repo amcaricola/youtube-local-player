@@ -5,7 +5,7 @@ import { SettingsModal } from './components/settings/SettingsModal.jsx';
 import { TrackEditModal } from './components/playlist/TrackEditModal.jsx';
 import { TrackRepairModal } from './components/playlist/TrackRepairModal.jsx';
 import { StatusBadge } from './components/common/StatusBadge.jsx';
-import { runCascadingLinkCheck } from './api/linkChecker.js';
+import { runCascadingLinkCheck, getRecoveryDaysLeft } from './api/linkChecker.js';
 import { initYouTubePlayer, playTrack, togglePlay, toggleMute, setVolume, seekTo } from './api/iframePlayer.js';
 import { extractPlaylistId } from './api/youtubeApi.js';
 import { playerState } from './state/playerState.js';
@@ -419,7 +419,13 @@ export function App() {
                           </td>
                           <td class="py-3">
                             <div class="flex items-center gap-3 min-w-0">
-                              <img src={track.thumbnailUrl} class="w-10 h-10 rounded object-cover shrink-0" />
+                              {track.thumbnailUrl ? (
+                                <img src={track.thumbnailUrl} class="w-10 h-10 rounded object-cover shrink-0" />
+                              ) : (
+                                <div class="w-10 h-10 rounded bg-white/5 border border-white/10 flex items-center justify-center shrink-0" title="Miniatura no disponible">
+                                  <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+                                </div>
+                              )}
                               <span class={`font-medium truncate max-w-[340px] ${isPlaying ? 'text-blue-400' : 'text-gray-200'}`} title={track.title}>
                                 {track.title}
                               </span>
@@ -442,9 +448,10 @@ export function App() {
                             <span title={track.publishedAt || ''}>{formatUploadDate(track.publishedAt)}</span>
                           </td>
                           <td class="py-3 pr-3 text-right rounded-r-lg min-w-[90px]">
-                            <StatusBadge
-                              status={track.removedFromSource ? 'removed' : track.status}
-                              message={track.removedFromSource ? 'Ya no está en la playlist de YouTube, pero sigue guardada con su información' : track.statusMessage}
+                             <StatusBadge
+                               status={track.removedFromSource ? 'removed' : track.status}
+                               message={track.removedFromSource ? 'Ya no está en la playlist de YouTube, pero sigue guardada con su información' : track.statusMessage}
+                               recoveryDaysLeft={getRecoveryDaysLeft(track)}
                               onClick={() => {
                                 if (track.removedFromSource) {
                                   window.open(`https://www.youtube.com/watch?v=${track.videoId}`, '_blank');

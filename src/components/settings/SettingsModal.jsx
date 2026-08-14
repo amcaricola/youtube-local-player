@@ -3,6 +3,7 @@ import { settingsState } from '../../state/settingsState.js';
 import { checkApiKey } from '../../api/youtubeApi.js';
 import { runCascadingLinkCheck, linkCheckerState } from '../../api/linkChecker.js';
 import { playlistState, showToast, syncAllPlaylists, deletePlaylist, loadLocalPlaylists } from '../../state/playlistState.js';
+import { playerState } from '../../state/playerState.js';
 import storage from '../../storage/index.js';
 
 export function SettingsModal() {
@@ -12,12 +13,14 @@ export function SettingsModal() {
 
   const [isValidated, setIsValidated] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmWipe, setConfirmWipe] = useState(false);
   const [showStatusDetails, setShowStatusDetails] = useState(false);
   const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 5 * 1024 * 1024 });
   const importInputRef = useRef(null);
 
   useEffect(() => {
     setConfirmDelete(false);
+    setConfirmWipe(false);
     setShowStatusDetails(false);
     if (settingsState.isSettingsOpen.value) {
       let total = 0;
@@ -49,6 +52,22 @@ export function SettingsModal() {
     }
     setConfirmDelete(false);
     await deletePlaylist(active.id);
+  };
+
+  // Borrado total de datos locales a petición del usuario (Developer Policies III.E.4.g).
+  const handleWipeAll = async () => {
+    if (!confirmWipe) {
+      setConfirmWipe(true);
+      return;
+    }
+    setConfirmWipe(false);
+    await storage.clearAll();
+    settingsState.apiKey.value = '';
+    playerState.currentTrack.value = null;
+    playlistState.playlists.value = [];
+    playlistState.activePlaylist.value = null;
+    showToast('Se eliminaron todos los datos locales');
+    handleClose();
   };
 
   const handleExport = async () => {
@@ -123,6 +142,7 @@ export function SettingsModal() {
     setStatus({ type: '', msg: '' });
     setIsValidated(false);
     setConfirmDelete(false);
+    setConfirmWipe(false);
     setShowStatusDetails(false);
   };
 
@@ -235,7 +255,7 @@ export function SettingsModal() {
                 <span class="w-2.5 h-2.5 rounded-full bg-red-400 mt-0.5 shrink-0"></span>
                 <div>
                   <span class="font-medium text-gray-100">Roto (rojo)</span>
-                  <p class="text-gray-400">Video eliminado o no disponible; no se puede reproducir. Clic en el badge abre la búsqueda de un reemplazo sin perder tus metadatos.</p>
+                  <p class="text-gray-400">Video eliminado o no disponible; no se puede reproducir. Clic en el badge abre la búsqueda de un reemplazo sin perder tus metadatos. Tienes un plazo de días (visible en el badge) para repararlo antes de que se elimine la metadata de YouTube; tu título y artista siempre se conservan.</p>
                 </div>
               </div>
               <div class="flex items-start gap-2.5">
@@ -293,6 +313,11 @@ export function SettingsModal() {
               ></div>
             </div>
             <p class="text-xs text-gray-400 mt-2">{storagePercent}% usado de la capacidad habitual del navegador.</p>
+            <p class="text-xs text-gray-500 mt-2">
+              Los títulos y artistas son editables y pueden diferir del video de YouTube. La fecha de publicación,
+              miniatura y duración provienen de la API de YouTube y se renuevan automáticamente (máx. 30 días);
+              si un link roto no se repara a tiempo, esa metadata se elimina y conservas tu título y artista.
+            </p>
             {storagePercent >= 90 && (
               <p class="text-xs text-red-300 mt-1">
                 El almacenamiento está casi lleno. Considera exportar un respaldo o eliminar playlists para liberar espacio.
@@ -319,6 +344,17 @@ export function SettingsModal() {
                 class="hidden"
               />
             </div>
+            <button
+              onClick={handleWipeAll}
+              class={`w-full mt-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-colors border ${
+                confirmWipe
+                  ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white'
+                  : 'bg-transparent hover:bg-red-500/10 border-red-500/30 text-red-400'
+              }`}
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              {confirmWipe ? '¿Confirmar? Se borrarán TODAS las playlists y metadatos locales' : 'Borrar todos mis datos'}
+            </button>
           </div>
 
           <div>

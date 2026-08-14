@@ -180,24 +180,33 @@ export const loadLocalPlaylists = async () => {
 
 /**
  * Transforma los items crudos de la API de YouTube a nuestro modelo Track.
+ * El título original y el canal se usan solo en memoria para el parseo y se
+ * descartan (Developer Policies III.E.4): solo persistimos título/artista
+ * (datos del usuario), el videoId (enlace al recurso) y la metadata mínima
+ * refrescable (miniatura, fecha de publicación).
  * @param {Array} rawItems
  */
 const mapRawItemsToTracks = (rawItems) => rawItems
   .filter(item => item.snippet.title !== 'Private video' && item.snippet.title !== 'Deleted video')
   .map(item => {
     const { title, artist } = parseTrackMetadata(item.snippet.title, item.snippet.videoOwnerChannelTitle || '');
-    
+    const now = Date.now();
+
     return {
       id: item.contentDetails.videoId,
       videoId: item.contentDetails.videoId,
-      originalTitle: item.snippet.title,
-      title: title,
-      artist: artist,
-      channelTitle: item.snippet.videoOwnerChannelTitle || 'Desconocido',
+      title,
+      artist,
       thumbnailUrl: item.snippet.thumbnails?.default?.url || '',
       publishedAt: item.contentDetails?.videoPublishedAt || null,
+      durationSeconds: null, // la completa el link checker en su primer barrido
       status: 'unchecked',
-      addedAt: Date.now()
+      statusMessage: null,
+      brokenAt: null,
+      metadataFetchedAt: now,
+      removedFromSource: false,
+      addedAt: now,
+      lastCheckedAt: null
     };
   });
 
