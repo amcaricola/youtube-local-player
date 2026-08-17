@@ -1,5 +1,7 @@
 import { useState } from 'preact/hooks';
-import { playlistState, importYouTubePlaylist, createLocalPlaylist, showToast } from '../../state/playlistState.js';
+import { playlistState, showToast } from '../../state/playlistState.js';
+import { importYouTubePlaylist } from '../../state/playlistImports.js';
+import { createLocalPlaylist } from '../../state/playlistCrud.js';
 import { settingsState } from '../../state/settingsState.js';
 import { extractPlaylistId } from '../../api/youtubeApi.js';
 import { runCascadingLinkCheck } from '../../api/linkChecker.js';

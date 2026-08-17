@@ -7,11 +7,16 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "node server/index.js",
+    "dev:server": "node --watch server/index.js",
+    "password": "node server/setPassword.js",
     "test": "node --test",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.1",
     "@preact/signals": "^1.3.0",
+    "hono": "^4.13.2",
     "preact": "^10.24.0"
   },
   "devDependencies": {

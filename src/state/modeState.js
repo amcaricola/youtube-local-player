@@ -1,5 +1,6 @@
 import { signal, computed, effect } from '@preact/signals';
 import { settingsState } from './settingsState.js';
+import { isDemoRoute } from './demoRoute.js';
 
 const MODE_KEY = 'app_mode';
 
@@ -11,11 +12,6 @@ const MODE_KEY = 'app_mode';
  * - 'demo'     : ruta `/demo`, datos mock en memoria (no usa localStorage).
  * - 'servidor' : instancia personal / API Key del usuario (versión completa).
  */
-const isDemoRoute = () => {
-  if (typeof location === 'undefined') return false;
-  const segments = location.pathname.split('/').filter(Boolean);
-  return segments[segments.length - 1] === 'demo';
-};
 
 const readSavedMode = () => {
   if (typeof localStorage === 'undefined') return 'none';

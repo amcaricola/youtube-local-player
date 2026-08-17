@@ -79,7 +79,7 @@ export function PlayerBar() {
         <div class="flex items-center gap-6 mb-2">
 
           <button
-            onClick={() => import('../../state/playlistState.js').then(({ cycleRepeatMode }) => cycleRepeatMode())}
+            onClick={() => import('../../state/shuffleEngine.js').then(({ cycleRepeatMode }) => cycleRepeatMode())}
             class={`relative transition-colors ${repeatMode !== 'off' ? 'text-blue-500 hover:text-blue-400' : 'text-gray-500 hover:text-white'}`}
             title={repeatMode === 'one' ? 'Repetir canción (clic para cambiar)' : repeatMode === 'all' ? 'Repetir lista (clic para cambiar)' : 'Repetir desactivado (clic para cambiar)'}
             aria-label="Cambiar modo de repetición"
@@ -91,7 +91,7 @@ export function PlayerBar() {
           </button>
 
           <button onClick={() => {
-              import('../../state/playlistState.js').then(({ playPrevTrack }) => playPrevTrack());
+              import('../../state/playbackQueue.js').then(({ playPrevTrack }) => playPrevTrack());
             }} 
             class="text-gray-400 hover:text-white transition-colors" title="Anterior">
             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"></path></svg>
@@ -122,14 +122,14 @@ export function PlayerBar() {
           </button>
           
           <button onClick={() => {
-              import('../../state/playlistState.js').then(({ playNextTrack }) => playNextTrack());
+              import('../../state/playbackQueue.js').then(({ playNextTrack }) => playNextTrack());
             }} 
             class="text-gray-400 hover:text-white transition-colors" title="Siguiente">
             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"></path></svg>
           </button>
 
           <button onClick={() => {
-              import('../../state/playlistState.js').then(({ toggleShuffle }) => toggleShuffle());
+              import('../../state/shuffleEngine.js').then(({ toggleShuffle }) => toggleShuffle());
             }} 
             class={`transition-colors ${playlistState.isShuffle.value ? 'text-blue-500 hover:text-blue-400' : 'text-gray-500 hover:text-white'}`} 
             title="Aleatorio (Shuffle)">

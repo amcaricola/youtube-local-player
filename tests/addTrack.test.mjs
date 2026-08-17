@@ -13,10 +13,9 @@ globalThis.localStorage = {
 globalThis.location = { pathname: '/demo' };
 
 const {
-  playlistState,
-  createLocalPlaylist,
-  addTrackToPlaylist
+  playlistState
 } = await import('../src/state/playlistState.js');
+const { createLocalPlaylist, addTrackToPlaylist } = await import('../src/state/playlistCrud.js');
 
 const makeTrack = () => ({
   id: 'dQw4w9WgXcQ',

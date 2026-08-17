@@ -10,7 +10,9 @@ globalThis.localStorage = {
   removeItem: key => values.delete(key)
 };
 
-const { playlistState, loadLocalPlaylists, DEMO_PLAYLIST_ID } = await import('../src/state/playlistState.js');
+const { playlistState } = await import('../src/state/playlistState.js');
+const { loadLocalPlaylists } = await import('../src/state/playlistImports.js');
+const { DEMO_PLAYLIST_ID } = await import('../src/state/playlistDemo.js');
 
 const demoPlaylist = {
   id: DEMO_PLAYLIST_ID,

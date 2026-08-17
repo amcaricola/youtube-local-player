@@ -1,4 +1,5 @@
-import { playlistState, exitDemoMode } from '../../state/playlistState.js';
+import { playlistState } from '../../state/playlistState.js';
+import { exitDemoMode } from '../../state/playlistDemo.js';
 
 export function DemoIntroModal() {
   if (!playlistState.showDemoIntro.value) return null;

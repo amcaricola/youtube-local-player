@@ -1,11 +1,11 @@
 import { signal, computed, effect } from '@preact/signals';
-import { fetchPlaylistData } from '../api/youtubeApi.js';
-import { parseTrackMetadata } from '../api/metadataParser.js';
-import storage from '../storage/index.js';
-import { playerState } from './playerState.js';
-import { settingsState } from './settingsState.js';
-import { modeState, setMode } from './modeState.js';
 
+/**
+ * Estado central de playlists y su vista (filtros, orden, paginación).
+ * Las operaciones de importación/sincronización viven en `playlistImports.js`,
+ * el CRUD local en `playlistCrud.js`, la demo en `playlistDemo.js` y el
+ * motor de reproducción en `shuffleEngine.js` / `playbackQueue.js`.
+ */
 export const playlistState = {
   playlists: signal([]),
   activePlaylist: signal(null),
@@ -32,6 +32,10 @@ export const playlistState = {
   sortDirection: signal('asc')
 };
 
+/**
+ * Tracks visibles de la playlist activa según búsqueda, filtro de artistas,
+ * filtro de problemas y orden. Shuffle y cola operan sobre esta lista.
+ */
 export const filteredTracks = computed(() => {
   const active = playlistState.activePlaylist.value;
   if (!active) return [];
@@ -42,7 +46,7 @@ export const filteredTracks = computed(() => {
   if (playlistState.problemFilter.value) {
     tracks = tracks.filter(t => t.status === 'broken' || t.status === 'warning');
   }
-if (artistFilters.length > 0) {
+  if (artistFilters.length > 0) {
     tracks = tracks.filter(t => artistFilters.some(name => t.artist.toLowerCase().includes(name)));
   }
   if (query) {
@@ -73,18 +77,7 @@ if (artistFilters.length > 0) {
   return tracks;
 });
 
-export const toggleSort = (key) => {
-  if (playlistState.sortKey.value !== key) {
-    playlistState.sortKey.value = key;
-    playlistState.sortDirection.value = 'asc';
-  } else if (playlistState.sortDirection.value === 'asc') {
-    playlistState.sortDirection.value = 'desc';
-  } else {
-    playlistState.sortKey.value = null;
-    playlistState.sortDirection.value = 'asc';
-  }
-};
-
+/** Conteo de tracks con problemas (roto / aviso) de la playlist activa. */
 export const problemCounts = computed(() => {
   const active = playlistState.activePlaylist.value;
   if (!active) return { broken: 0, warning: 0 };
@@ -97,6 +90,19 @@ export const problemCounts = computed(() => {
   return { broken, warning };
 });
 
+/** Cicla el orden de la columna: asc → desc → desactivado. */
+export const toggleSort = (key) => {
+  if (playlistState.sortKey.value !== key) {
+    playlistState.sortKey.value = key;
+    playlistState.sortDirection.value = 'asc';
+  } else if (playlistState.sortDirection.value === 'asc') {
+    playlistState.sortDirection.value = 'desc';
+  } else {
+    playlistState.sortKey.value = null;
+    playlistState.sortDirection.value = 'asc';
+  }
+};
+
 let toastTimeout = null;
 export const showToast = (message) => {
   playlistState.toast.value = message;
@@ -105,48 +111,6 @@ export const showToast = (message) => {
     playlistState.toast.value = null;
   }, 3000);
 };
-
-export const generateShuffle = (tracks, excludeTrackId = null) => {
-  let queue = tracks.map(t => t.id);
-  // Fisher-Yates
-  for (let i = queue.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [queue[i], queue[j]] = [queue[j], queue[i]];
-  }
-  if (excludeTrackId) {
-    queue = queue.filter(id => id !== excludeTrackId);
-  }
-  return queue;
-};
-
-export const toggleShuffle = () => {
-  playlistState.isShuffle.value = !playlistState.isShuffle.value;
-  if (playlistState.isShuffle.value) {
-    const current = playerState.currentTrack.value;
-    playlistState.shuffledQueue.value = generateShuffle(filteredTracks.value, current?.id);
-    playlistState.playedHistory.value = current ? [current.id] : [];
-  } else {
-    playlistState.shuffledQueue.value = [];
-  }
-};
-
-export const cycleRepeatMode = () => {
-  const modes = ['off', 'all', 'one'];
-  const current = playlistState.repeatMode.value;
-  const next = modes[(modes.indexOf(current) + 1) % modes.length];
-  playlistState.repeatMode.value = next;
-};
-
-// Cuando el filtro de búsqueda cambia con shuffle activo, regenera la cola
-// para que el shuffle solo reproduzca canciones de la lista filtrada actual.
-effect(() => {
-  filteredTracks.value;
-  if (playlistState.isShuffle.value) {
-    const current = playerState.currentTrack.value;
-    playlistState.shuffledQueue.value = generateShuffle(filteredTracks.value, current?.id);
-    playlistState.playedHistory.value = current ? [current.id] : [];
-  }
-});
 
 // Al cambiar playlist, búsqueda o filtro de problemas, vuelve a la vista paginada inicial.
 // (La paginación es solo visual: shuffle y filtrado usan la lista completa)
@@ -171,461 +135,3 @@ effect(() => {
   playlistState.sortKey.value = null;
   playlistState.sortDirection.value = 'asc';
 });
-
-/**
- * Carga las playlists desde el storage local.
- * Si aparece la playlist de demo persistida (legado de una versión anterior
- * que sí guardaba la demo en localStorage), se purga: la demo vive solo en
- * memoria y en la ruta /demo, nunca en el almacenamiento del servidor.
- */
-export const loadLocalPlaylists = async () => {
-  const lists = await storage.getPlaylists();
-  let clean = lists;
-  if (!modeState.isDemo.value && lists.some(p => p.id === DEMO_PLAYLIST_ID)) {
-    await storage.deletePlaylist(DEMO_PLAYLIST_ID);
-    clean = lists.filter(p => p.id !== DEMO_PLAYLIST_ID);
-  }
-  playlistState.playlists.value = clean;
-  if (clean.length > 0 && !playlistState.activePlaylist.value) {
-    playlistState.activePlaylist.value = clean[0];
-  }
-};
-
-/**
- * Transforma los items crudos de la API de YouTube a nuestro modelo Track.
- * El título original y el canal se usan solo en memoria para el parseo y se
- * descartan (Developer Policies III.E.4): solo persistimos título/artista
- * (datos del usuario), el videoId (enlace al recurso) y la metadata mínima
- * refrescable (miniatura, fecha de publicación).
- * @param {Array} rawItems
- */
-const mapRawItemsToTracks = (rawItems) => rawItems
-  .filter(item => item.snippet.title !== 'Private video' && item.snippet.title !== 'Deleted video')
-  .map(item => {
-    const { title, artist } = parseTrackMetadata(item.snippet.title, item.snippet.videoOwnerChannelTitle || '');
-    const now = Date.now();
-
-    return {
-      id: item.contentDetails.videoId,
-      videoId: item.contentDetails.videoId,
-      title,
-      artist,
-      thumbnailUrl: item.snippet.thumbnails?.default?.url || '',
-      publishedAt: item.contentDetails?.videoPublishedAt || null,
-      durationSeconds: null, // la completa el link checker en su primer barrido
-      status: 'unchecked',
-      statusMessage: null,
-      brokenAt: null,
-      metadataFetchedAt: now,
-      removedFromSource: false,
-      addedAt: now,
-      lastCheckedAt: null
-    };
-  });
-
-/**
- * Importa y parsea una playlist desde YouTube a la base de datos local
- * @param {string} playlistId 
- * @param {string} apiKey 
- */
-export const importYouTubePlaylist = async (playlistId, apiKey) => {
-  playlistState.isLoading.value = true;
-  playlistState.error.value = null;
-  
-  try {
-    const data = await fetchPlaylistData(playlistId, apiKey);
-    
-    const newPlaylist = {
-      id: `pl_${Date.now()}`,
-      youtubePlaylistId: data.youtubePlaylistId,
-      title: data.title,
-      description: data.description,
-      thumbnail: data.thumbnail,
-      tracks: mapRawItemsToTracks(data.rawItems),
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
-
-    // Guardar en la persistencia local
-    await storage.savePlaylist(newPlaylist);
-    await loadLocalPlaylists();
-    
-    playlistState.activePlaylist.value = newPlaylist;
-    
-  } catch (error) {
-    console.error("Error al importar playlist:", error);
-    playlistState.error.value = error.message;
-  } finally {
-    playlistState.isLoading.value = false;
-  }
-};
-
-/**
- * Sincroniza una playlist local con su versión en YouTube:
- * - Agrega al final las canciones nuevas añadidas en YouTube.
- * - Marca con `removedFromSource` las que ya no están en la playlist de
- *   YouTube (se conservan en local con su metadata para no perder nada).
- * - Nunca pisa los metadatos editados por el usuario.
- * @param {import('../types/player.js').Playlist} playlist
- * @param {string} apiKey
- * @returns {Promise<{added: number, removed: number}|null>}
- */
-export const syncPlaylistWithYouTube = async (playlist, apiKey) => {
-  if (!playlist?.youtubePlaylistId) return null;
-  playlistState.isSyncing.value = true;
-
-  try {
-    const data = await fetchPlaylistData(playlist.youtubePlaylistId, apiKey);
-    const remoteTracks = mapRawItemsToTracks(data.rawItems);
-    const remoteIds = new Set(remoteTracks.map(t => t.videoId));
-    const localIds = new Set(playlist.tracks.map(t => t.videoId));
-
-    const newTracks = remoteTracks.filter(t => !localIds.has(t.videoId));
-    const existing = playlist.tracks.map(t => ({
-      ...t,
-      removedFromSource: !remoteIds.has(t.videoId)
-    }));
-
-    const updated = {
-      ...playlist,
-      title: data.title || playlist.title,
-      description: data.description ?? playlist.description,
-      thumbnail: data.thumbnail || playlist.thumbnail,
-      tracks: [...existing, ...newTracks],
-      updatedAt: Date.now()
-    };
-
-    await storage.savePlaylist(updated);
-    await loadLocalPlaylists();
-
-    if (playlistState.activePlaylist.value?.id === playlist.id) {
-      playlistState.activePlaylist.value = updated;
-    }
-
-    return {
-      added: newTracks.length,
-      removed: existing.filter(t => t.removedFromSource).length
-    };
-  } finally {
-    playlistState.isSyncing.value = false;
-  }
-};
-
-/**
- * Sincroniza todas las playlists locales que tienen origen en YouTube,
- * de forma secuencial y con un pequeño respiro entre cada una.
- * @returns {Promise<Array<{title: string, added: number, removed: number}>>}
- */
-export const syncAllPlaylists = async () => {
-  const apiKey = settingsState.apiKey.value;
-  if (!apiKey) return [];
-
-  const results = [];
-  for (const playlist of [...playlistState.playlists.value]) {
-    if (!playlist.youtubePlaylistId) continue;
-    try {
-      const result = await syncPlaylistWithYouTube(playlist, apiKey);
-      if (result) {
-        results.push({ title: playlist.title, ...result });
-      }
-    } catch (error) {
-      console.error(`Error al sincronizar "${playlist.title}":`, error);
-    }
-    await new Promise(resolve => setTimeout(resolve, 1500));
-  }
-  return results;
-};
-
-/**
- * Actualiza los metadatos de un track y los persiste en el storage.
- * También refleja el cambio en la canción actualmente reproducida.
- * @param {string} playlistId 
- * @param {string} trackId 
- * @param {Partial<import('../types/player.js').Track>} updates 
- */
-export const updateTrackMetadata = async (playlistId, trackId, updates) => {
-  await storage.updateTrack(playlistId, trackId, updates);
-
-  const applyUpdate = (playlist) => ({
-    ...playlist,
-    tracks: playlist.tracks.map(t => t.id === trackId ? { ...t, ...updates } : t)
-  });
-
-  playlistState.playlists.value = playlistState.playlists.value.map(pl =>
-    pl.id === playlistId ? applyUpdate(pl) : pl
-  );
-
-  const active = playlistState.activePlaylist.value;
-  if (active && active.id === playlistId) {
-    playlistState.activePlaylist.value = applyUpdate(active);
-  }
-
-  if (playerState.currentTrack.value?.id === trackId) {
-    playerState.currentTrack.value = { ...playerState.currentTrack.value, ...updates };
-  }
-};
-
-/**
- * Elimina una playlist completa del storage local.
- * @param {string} playlistId
- */
-export const deletePlaylist = async (playlistId) => {
-  await storage.deletePlaylist(playlistId);
-  await loadLocalPlaylists();
-  if (playlistState.activePlaylist.value?.id === playlistId) {
-    playlistState.activePlaylist.value = playlistState.playlists.value[0] || null;
-  }
-};
-
-export const DEMO_PLAYLIST_ID = 'demo-playlist';
-
-/**
- * Carga la playlist de demostración desde el JSON local (no usa API Key).
- * Los timestamps volátiles (brokenAt, addedAt, etc.) se calculan relativos
- * al momento actual para que los badges se vean frescos.
- * @param {object|null} [demoData] Datos de la demo inyectados (usado en tests;
- *   en el navegador se importa el JSON automáticamente).
- */
-export const loadDemoPlaylist = async (demoData = null) => {
-  if (!demoData) {
-    const mod = await import('../data/demoPlaylist.json');
-    demoData = mod.default;
-  }
-  const now = Date.now();
-  const DAY = 86400000;
-
-  const tracks = demoData.tracks.map((t, i) => {
-    const isBroken = t.status === 'broken';
-    const isUnchecked = t.status === 'unchecked';
-    const brokenDaysAgo = t.brokenDaysAgo || 0;
-    return {
-      id: `demo-track-${i + 1}`,
-      videoId: t.videoId,
-      title: t.title,
-      artist: t.artist,
-      thumbnailUrl: t.thumbnailUrl || '',
-      publishedAt: isBroken || isUnchecked ? null : t.publishedAt,
-      durationSeconds: isBroken || isUnchecked ? null : t.durationSeconds,
-      status: t.status,
-      statusMessage: t.statusMessage || null,
-      brokenAt: isBroken ? now - brokenDaysAgo * DAY : null,
-      metadataFetchedAt: isBroken || isUnchecked ? 0 : now - 2 * DAY,
-      removedFromSource: Boolean(t.removedFromSource),
-      addedAt: now - (brokenDaysAgo + 20) * DAY,
-      lastCheckedAt: isUnchecked ? null : isBroken ? now - brokenDaysAgo * DAY : now - DAY
-    };
-  });
-
-  const playlist = {
-    id: DEMO_PLAYLIST_ID,
-    youtubePlaylistId: null,
-    title: demoData.title,
-    description: demoData.description,
-    thumbnail: demoData.thumbnail,
-    tracks,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  await storage.savePlaylist(playlist);
-  await loadLocalPlaylists();
-  playlistState.activePlaylist.value =
-    playlistState.playlists.value.find(p => p.id === DEMO_PLAYLIST_ID) || playlist;
-  setMode('demo');
-  playlistState.showDemoIntro.value = true;
-  showToast('Modo demo activado');
-};
-
-/**
- * Sale del modo demo: elimina la playlist de ejemplo, vuelve a 'none' y
- * redirige a la raíz (la demo vive en la ruta /demo).
- */
-export const exitDemoMode = async () => {
-  await storage.deletePlaylist(DEMO_PLAYLIST_ID);
-  await loadLocalPlaylists();
-  if (playlistState.activePlaylist.value?.id === DEMO_PLAYLIST_ID) {
-    playlistState.activePlaylist.value = null;
-  }
-  setMode('none');
-  if (typeof location !== 'undefined') {
-    const segments = location.pathname.split('/').filter(Boolean);
-    if (segments[segments.length - 1] === 'demo') {
-      location.href = './';
-      return;
-    }
-  }
-  showToast('Saliste del modo demo');
-};
-
-/**
- * Crea una playlist local vacía (sin origen en YouTube) y la deja activa.
- * En modo demo se guarda solo en memoria.
- * @param {string} title
- */
-export const createLocalPlaylist = async (title) => {
-  const now = Date.now();
-  const playlist = {
-    id: `local_${now}_${Math.random().toString(36).slice(2, 7)}`,
-    youtubePlaylistId: null,
-    title: title.trim() || 'Nueva playlist',
-    description: '',
-    thumbnail: '',
-    tracks: [],
-    createdAt: now,
-    updatedAt: now
-  };
-
-  await storage.savePlaylist(playlist);
-  await loadLocalPlaylists();
-  playlistState.activePlaylist.value =
-    playlistState.playlists.value.find(p => p.id === playlist.id) || playlist;
-  showToast('Playlist local creada');
-};
-
-/**
- * Agrega una canción creada manualmente a una playlist local.
- * Rechaza duplicados por videoId y persiste el track (en demo, en memoria).
- * @param {string} playlistId
- * @param {import('../types/player.js').Track} track
- * @returns {Promise<boolean>} true si se agregó, false si ya existía
- */
-export const addTrackToPlaylist = async (playlistId, track) => {
-  const playlists = await storage.getPlaylists();
-  const playlist = playlists.find(p => p.id === playlistId);
-  if (!playlist) return false;
-  if (playlist.tracks.some(t => t.videoId === track.videoId)) {
-    showToast('Esa canción ya está en la playlist');
-    return false;
-  }
-
-  const now = Date.now();
-  const newTrack = { ...track, addedAt: now };
-  const updatedPlaylist = { ...playlist, tracks: [...playlist.tracks, newTrack], updatedAt: now };
-
-  await storage.savePlaylist(updatedPlaylist);
-
-  const applyAdd = (pl) => (pl.id === playlistId ? updatedPlaylist : pl);
-
-  playlistState.playlists.value = playlistState.playlists.value.map(applyAdd);
-  if (playlistState.activePlaylist.value?.id === playlistId) {
-    playlistState.activePlaylist.value = updatedPlaylist;
-  }
-
-  showToast('Canción agregada');
-  return true;
-};
-
-/**
- * Elimina una canción de la playlist local (persistida en storage).
- * @param {string} playlistId
- * @param {string} trackId
- */
-export const removeTrackFromPlaylist = async (playlistId, trackId) => {
-  const playlists = await storage.getPlaylists();
-  const playlist = playlists.find(p => p.id === playlistId);
-  if (playlist) {
-    playlist.tracks = playlist.tracks.filter(t => t.id !== trackId);
-    await storage.savePlaylist(playlist);
-  }
-
-  const applyRemove = (pl) => ({ ...pl, tracks: pl.tracks.filter(t => t.id !== trackId) });
-  playlistState.playlists.value = playlistState.playlists.value.map(pl =>
-    pl.id === playlistId ? applyRemove(pl) : pl
-  );
-  if (playlistState.activePlaylist.value?.id === playlistId) {
-    playlistState.activePlaylist.value = applyRemove(playlistState.activePlaylist.value);
-  }
-};
-
-/**
- * Reproduce la siguiente canción de la lista activa
- */
-export const playNextTrack = () => {
-  const active = playlistState.activePlaylist.value;
-  const current = playerState.currentTrack.value;
-  if (!active) return;
-  
-  const tracks = filteredTracks.value;
-  if (tracks.length === 0) return;
-
-  import('../api/iframePlayer.js').then(({ playTrack }) => {
-    if (playlistState.isShuffle.value) {
-      let queue = [...playlistState.shuffledQueue.value];
-      if (queue.length === 0) {
-        // La cola se agotó: solo se vuelve a llenar si el modo lo permite
-        if (playlistState.repeatMode.value === 'off') return;
-        playlistState.shuffledQueue.value = generateShuffle(tracks, current?.id);
-        playlistState.playedHistory.value = [];
-        queue = [...playlistState.shuffledQueue.value];
-      }
-      let nextId = queue.shift();
-      // Saltar IDs duplicados del video recién terminado para evitar un loop ENDED->loadVideoById
-      while (nextId && current && nextId === current.id) {
-        nextId = queue.shift();
-      }
-      playlistState.shuffledQueue.value = queue;
-
-      const nextTrack = tracks.find(t => t.id === nextId);
-      if (nextTrack) {
-        if (current) {
-          playlistState.playedHistory.value = [...playlistState.playedHistory.value, current.id];
-        }
-        playTrack(nextTrack);
-      }
-    } else {
-      if (!current) {
-        playTrack(tracks[0]);
-        return;
-      }
-      const currentIndex = tracks.findIndex(t => t.id === current.id);
-      if (currentIndex >= 0 && currentIndex < tracks.length - 1) {
-        playTrack(tracks[currentIndex + 1]);
-      } else if (playlistState.repeatMode.value === 'all') {
-        // Loop back to start
-        playTrack(tracks[0]);
-      }
-    }
-  });
-};
-
-/**
- * Reproduce la canción anterior de la lista activa
- */
-export const playPrevTrack = () => {
-  const active = playlistState.activePlaylist.value;
-  const current = playerState.currentTrack.value;
-  if (!active || !current) return;
-  
-  // Si lleva más de 3 segundos, reiniciar la canción actual
-  if (playerState.currentTime.value > 3) {
-    import('../api/iframePlayer.js').then(({ seekTo }) => {
-      seekTo(0);
-    });
-    return;
-  }
-  
-  const tracks = filteredTracks.value;
-
-  import('../api/iframePlayer.js').then(({ playTrack }) => {
-    if (playlistState.isShuffle.value) {
-      if (playlistState.playedHistory.value.length > 0) {
-        const history = [...playlistState.playedHistory.value];
-        const prevId = history.pop();
-        playlistState.playedHistory.value = history;
-        
-        playlistState.shuffledQueue.value = [current.id, ...playlistState.shuffledQueue.value];
-        const prevTrack = tracks.find(t => t.id === prevId);
-        if (prevTrack) playTrack(prevTrack);
-      } else {
-        import('../api/iframePlayer.js').then(({ seekTo }) => seekTo(0));
-      }
-    } else {
-      const currentIndex = tracks.findIndex(t => t.id === current.id);
-      if (currentIndex > 0) {
-        playTrack(tracks[currentIndex - 1]);
-      } else {
-        playTrack(tracks[tracks.length - 1]);
-      }
-    }
-  });
-};

@@ -3,20 +3,23 @@ import { settingsState } from '../../state/settingsState.js';
 import { modeState } from '../../state/modeState.js';
 import { authState, setMasterPassword, lockNow } from '../../state/authState.js';
 import { showToast } from '../../state/playlistState.js';
+import { restoreFromServer } from '../../api/backupSync.js';
 
 export function UserSettingsModal() {
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
   const [pwMsg, setPwMsg] = useState(null);
+  const [backupMsg, setBackupMsg] = useState(null);
 
   const handleClose = () => {
     settingsState.isUserSettingsOpen.value = false;
     setPwNew('');
     setPwConfirm('');
     setPwMsg(null);
+    setBackupMsg(null);
   };
 
-  const handleSetPassword = () => {
+  const handleSetPassword = async () => {
     if (pwNew.length < 4) {
       setPwMsg({ type: 'error', msg: 'La contraseña debe tener al menos 4 caracteres.' });
       return;
@@ -25,14 +28,23 @@ export function UserSettingsModal() {
       setPwMsg({ type: 'error', msg: 'Las contraseñas no coinciden.' });
       return;
     }
-    setMasterPassword(pwNew);
+    setPwMsg(null);
+    const ok = await setMasterPassword(pwNew);
+    if (!ok) {
+      setPwMsg({ type: 'error', msg: 'No se pudo guardar la contraseña. ¿Está activo el servidor?' });
+      return;
+    }
     setPwNew('');
     setPwConfirm('');
     setPwMsg({ type: 'success', msg: 'Contraseña maestra guardada.' });
   };
 
-  const handleRemovePassword = () => {
-    setMasterPassword('');
+  const handleRemovePassword = async () => {
+    const ok = await setMasterPassword('');
+    if (!ok) {
+      setPwMsg({ type: 'error', msg: 'No se pudo eliminar la contraseña. ¿Está activo el servidor?' });
+      return;
+    }
     setPwNew('');
     setPwConfirm('');
     setPwMsg({ type: 'success', msg: 'Contraseña maestra eliminada.' });
@@ -42,6 +54,17 @@ export function UserSettingsModal() {
     lockNow();
     settingsState.isUserSettingsOpen.value = false;
     showToast('Instancia bloqueada');
+  };
+
+  const handleRestoreBackup = async () => {
+    setBackupMsg(null);
+    const ok = await restoreFromServer();
+    if (ok) {
+      setBackupMsg({ type: 'success', msg: 'Biblioteca importada desde el respaldo del servidor.' });
+      showToast('Backup recuperado desde el servidor');
+    } else {
+      setBackupMsg({ type: 'error', msg: 'No hay respaldo en el servidor o el servidor no está disponible.' });
+    }
   };
 
   if (!settingsState.isUserSettingsOpen.value) return null;
@@ -66,6 +89,14 @@ export function UserSettingsModal() {
         <div class="space-y-4">
           <div>
             <h3 class="text-sm font-semibold text-gray-300 mb-3">Acceso de Super Usuario</h3>
+            {authState.authDisabled.value && (
+              <div class="text-sm p-3 mb-3 rounded-lg bg-amber-500/15 border border-amber-400/30 text-amber-200">
+                Autenticación desactivada (<code class="text-amber-300">noAuthentication: true</code> en
+                <code class="text-amber-300"> server/.config.json</code>). Establece una nueva contraseña y luego
+                cambia <code class="text-amber-300">noAuthentication</code> a <code class="text-amber-300">false</code>
+                para volver a proteger la instancia.
+              </div>
+            )}
             {!authState.passwordRequired.value ? (
               <>
                 <p class="text-xs text-gray-400 mb-3">Protege la versión servidor con una contraseña maestra. La sesión dura 30 días y luego se vuelve a pedir (por seguridad).</p>
@@ -157,6 +188,29 @@ export function UserSettingsModal() {
                   <span class={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${settingsState.demoEnabled.value ? 'left-[22px]' : 'left-0.5'}`}></span>
                 </button>
               </div>
+            </div>
+          )}
+
+          {!modeState.isDemo.value && (
+            <div class="border-t border-white/10 pt-4">
+              <h3 class="text-sm font-semibold text-gray-300 mb-3">Respaldo en servidor</h3>
+              <p class="text-xs text-gray-400 mb-3">
+                Importa ahora la biblioteca guardada en el servidor (otro dispositivo). El respaldo solo
+                contiene tus playlists: nunca viajan la API key ni la configuración del super usuario.
+              </p>
+              <button
+                onClick={handleRestoreBackup}
+                class="w-full py-2.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-400/30 text-emerald-200 rounded-lg text-sm font-medium transition-colors"
+              >
+                Recuperar backup de servidor
+              </button>
+              {backupMsg && (
+                <div class={`text-sm p-3 mt-3 rounded-lg ${
+                  backupMsg.type === 'error' ? 'bg-red-500/20 text-red-300' : 'bg-green-500/20 text-green-300'
+                }`}>
+                  {backupMsg.msg}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,7 +1,13 @@
 import { playerState } from '../state/playerState.js';
+import { onPlayerReady, onPlayerStateChange, onPlayerError } from './playerEvents.js';
+
+/**
+ * Wrapper de la YouTube IFrame Player API: inicialización, reproducción,
+ * control de volumen y pantalla completa. Los handlers de eventos del
+ * reproductor viven en `playerEvents.js`.
+ */
 
 let player = null;
-let progressInterval = null;
 let previousVolume = playerState.volume.value || 100;
 
 export const initYouTubePlayer = () => {
@@ -11,7 +17,7 @@ export const initYouTubePlayer = () => {
       return;
     }
 
-    // Contenedor fuera de la vista pero con dimensiones reales. 
+    // Contenedor fuera de la vista pero con dimensiones reales.
     // YouTube bloquea reproductores de 1x1 o invisibles por política de autoplay.
     let container = document.getElementById('yt-player-container');
     if (!container) {
@@ -27,7 +33,6 @@ export const initYouTubePlayer = () => {
     }
 
     const loadPlayer = () => {
-      console.log("[YT Player] Inicializando API de IFrame...");
       player = new window.YT.Player('yt-player-container', {
         height: '300',
         width: '400',
@@ -51,11 +56,10 @@ export const initYouTubePlayer = () => {
     };
 
     if (!window.YT || !window.YT.Player) {
-      console.log("[YT Player] Inyectando script de YouTube...");
       const tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
       document.head.appendChild(tag);
-      
+
       // YouTube llama a esta función global cuando su script está listo
       window.onYouTubeIframeAPIReady = loadPlayer;
     } else {
@@ -64,109 +68,24 @@ export const initYouTubePlayer = () => {
   });
 };
 
-function onPlayerReady(resolve) {
-  return (event) => {
-    console.log("[YT Player] Listo para recibir comandos.");
-      playerState.isReady.value = true;
-      playerState.errorMessage.value = '';
-      player.setVolume(playerState.volume.value);
-    
-    if (progressInterval) clearInterval(progressInterval);
-    progressInterval = setInterval(updateProgress, 500);
-    resolve();
-  };
-}
-
-function onPlayerStateChange(event) {
-  if (!window.YT) return;
-  console.log("[YT Player] Cambio de Estado:", event.data);
-  // Estados: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (video cued)
-  
-  if (event.data === window.YT.PlayerState.PLAYING) {
-    playerState.isPlaying.value = true;
-    playerState.isBuffering.value = false;
-    if (player.getDuration) {
-      playerState.duration.value = player.getDuration();
-    }
-  } else if (event.data === window.YT.PlayerState.PAUSED) {
-    playerState.isPlaying.value = false;
-    playerState.isBuffering.value = false;
-  } else if (event.data === window.YT.PlayerState.ENDED) {
-    playerState.isPlaying.value = false;
-    playerState.isBuffering.value = false;
-    playerState.trackEndedFlag.value++;
-  } else if (event.data === window.YT.PlayerState.CUED) {
-    // A veces YouTube encola el video pero no lo reproduce automáticamente.
-    // Forzamos el play si llega a este estado.
-    player.playVideo();
-  } else if (event.data === window.YT.PlayerState.BUFFERING) {
-    playerState.isBuffering.value = true;
-  }
-}
-
-function onPlayerError(event) {
-  console.error("[YT Player] Error en el reproductor:", event.data);
-  // Errores comunes: 
-  // 2 (parámetro inválido), 5 (HTML5 error), 100 (no encontrado/eliminado)
-  // 101/150 (propietario bloqueó su reproducción en iframes)
-  playerState.isPlaying.value = false;
-  playerState.isBuffering.value = false;
-
-  const current = playerState.currentTrack.value;
-  if (current) {
-    const broke = event.data === 100 || event.data === 2;
-    const message = broke
-      ? 'Video eliminado o no disponible'
-      : event.data === 101 || event.data === 150
-        ? 'El propietario bloqueó la reproducción embebida'
-        : event.data === 5
-          ? 'El reproductor HTML5 no pudo cargar este video'
-          : `Error del reproductor (${event.data})`;
-    const status = broke ? 'broken' : 'warning';
-    // Marcar el estado del track sin detener el flujo
-    import('../state/playlistState.js').then(async ({ playlistState, updateTrackMetadata }) => {
-      const active = playlistState.activePlaylist.value;
-      if (active) {
-        await updateTrackMetadata(active.id, current.id, {
-          status,
-          statusMessage: message,
-          lastCheckedAt: Date.now()
-        });
-      }
-    });
-  }
-
-  playerState.errorMessage.value = current
-    ? 'No se pudo reproducir este video. Revisa el estado del link o busca un reemplazo.'
-    : `YouTube devolvió un error (${event.data}).`;
-}
-
-function updateProgress() {
-  if (player && playerState.isPlaying.value && player.getCurrentTime) {
-    playerState.currentTime.value = player.getCurrentTime();
-  }
-}
-
 export const playTrack = (track) => {
   if (!player) {
     console.warn("[YT Player] Intento de reproducción, pero el player no está instanciado.");
     return;
   }
-  
+
   if (track && track.videoId) {
-    console.log("[YT Player] Cargando track:", track.videoId);
     playerState.currentTrack.value = track;
     playerState.errorMessage.value = '';
     playerState.isBuffering.value = true;
-    
+
     // Resetear el progreso al cargar una canción nueva para que la barra
     // no muestre el tiempo/progreso de la canción anterior
     playerState.currentTime.value = 0;
     playerState.duration.value = 0;
-    
-    // Usamos loadVideoById para cargar y reproducir
+
     player.loadVideoById(track.videoId);
-    
+
     // Forzamos la reproducción por si la API falla en el autoplay implícito
     setTimeout(() => {
       if (player && player.playVideo) {

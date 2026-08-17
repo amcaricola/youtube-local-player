@@ -17,7 +17,7 @@ const {
   needsCheck,
   parseISO8601Duration,
   RECOVERY_WINDOW_MS
-} = await import('../src/api/linkChecker.js');
+} = await import('../src/api/linkStatus.js');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

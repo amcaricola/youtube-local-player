@@ -19,12 +19,14 @@ const demoData = require('../src/data/demoPlaylist.json');
 const {
   playlistState,
   filteredTracks,
-  problemCounts,
-  loadDemoPlaylist,
+  problemCounts
+} = await import('../src/state/playlistState.js');
+const { loadDemoPlaylist } = await import('../src/state/playlistDemo.js');
+const {
   addTrackToPlaylist,
   removeTrackFromPlaylist,
   updateTrackMetadata
-} = await import('../src/state/playlistState.js');
+} = await import('../src/state/playlistCrud.js');
 
 const DEMO_PLAYLIST_ID = 'demo-playlist';
 const NEW_VIDEO_ID = 'NEW_VIDEO_ID_01';
@@ -46,45 +48,46 @@ const makeTrack = (videoId = NEW_VIDEO_ID) => ({
   lastCheckedAt: null
 });
 
-test('loadDemoPlaylist carga la playlist de demo con sus 11 tracks', async () => {
+test('loadDemoPlaylist carga la playlist de demo con sus 15 tracks', async () => {
   await loadDemoPlaylist(demoData);
   const pl = playlistState.activePlaylist.value;
 
   assert.equal(pl.id, DEMO_PLAYLIST_ID);
-  assert.equal(pl.tracks.length, 11);
+  assert.equal(pl.tracks.length, 15);
   assert.equal(playlistState.playlists.value.length, 1);
-  assert.equal(pl.tracks[0].videoId, 'dQw4w9WgXcQ');
-  assert.equal(pl.tracks[7].status, 'warning');   // CevxZvSJLk8 (Video privado)
-  assert.equal(pl.tracks[8].status, 'broken');    // demo-broken-001 (Video eliminado)
-  assert.equal(pl.tracks[9].status, 'unchecked'); // e-ORhEE9VVg
-  assert.equal(pl.tracks[10].removedFromSource, true); // OPf0YbXqDm0
+  assert.equal(pl.tracks[0].videoId, 'K4DyBUG242c');
+  assert.equal(pl.tracks[0].artist, 'Cartoon');
+  assert.equal(pl.tracks[11].status, 'warning');    // demo-warning-001 (Video privado)
+  assert.equal(pl.tracks[12].status, 'broken');     // demo-broken-001 (Video eliminado)
+  assert.equal(pl.tracks[13].status, 'unchecked');  // demo-unchecked-001
+  assert.equal(pl.tracks[14].removedFromSource, true); // 9rujCfYXhQc (Fearless)
 
   // Modo demo = adaptador de memoria: no se escribe nada en localStorage.
   assert.equal(values.has('yt_player_playlists'), false);
 });
 
-test('agregar una canción nueva la anexa al final (12 tracks)', async () => {
+test('agregar una canción nueva la anexa al final (16 tracks)', async () => {
   const ok = await addTrackToPlaylist(DEMO_PLAYLIST_ID, makeTrack());
   assert.equal(ok, true);
 
   const pl = playlistState.activePlaylist.value;
-  assert.equal(pl.tracks.length, 12);
-  const last = pl.tracks[11];
+  assert.equal(pl.tracks.length, 16);
+  const last = pl.tracks[15];
   assert.equal(last.videoId, NEW_VIDEO_ID);
   assert.equal(last.status, 'unchecked');
-  assert.equal(playlistState.playlists.value[0].tracks.length, 12);
+  assert.equal(playlistState.playlists.value[0].tracks.length, 16);
 });
 
 test('rechaza agregar un videoId que ya está en la demo', async () => {
-  const dup = await addTrackToPlaylist(DEMO_PLAYLIST_ID, makeTrack('dQw4w9WgXcQ'));
+  const dup = await addTrackToPlaylist(DEMO_PLAYLIST_ID, makeTrack('TW9d8vYrVFQ'));
   assert.equal(dup, false);
-  assert.equal(playlistState.activePlaylist.value.tracks.length, 12);
+  assert.equal(playlistState.activePlaylist.value.tracks.length, 16);
 });
 
 test('removeTrackFromPlaylist elimina el track agregado', async () => {
   await removeTrackFromPlaylist(DEMO_PLAYLIST_ID, NEW_VIDEO_ID);
   const pl = playlistState.activePlaylist.value;
-  assert.equal(pl.tracks.length, 11);
+  assert.equal(pl.tracks.length, 15);
   assert.equal(pl.tracks.some(t => t.videoId === NEW_VIDEO_ID), false);
 });
 
@@ -96,9 +99,9 @@ test('updateTrackMetadata edita un track de la demo sin pisar el resto', async (
 
   const updated = playlistState.activePlaylist.value.tracks[0];
   assert.equal(updated.title, 'Título editado');
-  assert.equal(updated.artist, 'Rick Astley'); // no se tocó
+  assert.equal(updated.artist, 'Cartoon'); // no se tocó
   assert.equal(playlistState.playlists.value[0].tracks[0].title, 'Título editado');
-  assert.equal(playlistState.activePlaylist.value.tracks[1].videoId, '9bZkp7q19f0'); // resto intacto
+  assert.equal(playlistState.activePlaylist.value.tracks[1].videoId, 'J2X5mJ3HDYE'); // resto intacto
 });
 
 test('filtro de problemas y contadores usan los estados de la demo', () => {

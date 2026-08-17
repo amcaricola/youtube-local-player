@@ -2,4 +2,6 @@ node_modules/
 dist/
 .env
 .env.local
+server/.config.json
+server/data/
 .DS_Store

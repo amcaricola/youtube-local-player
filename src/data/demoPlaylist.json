@@ -1,87 +1,125 @@
 {
-  "title": "Demo: Mezcla para Explorar",
-  "description": "Playlist de demostración con canciones de ejemplo para explorar la app. Los datos son fijos y se generan en local, sin usar tu API Key.",
-  "thumbnail": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+  "title": "Demo: No Copyright Songs",
+  "description": "Playlist de demostración con canciones libres de derechos (NoCopyrightSounds) para explorar la app. Los datos son fijos y se generan en local, sin usar tu API Key.",
+  "thumbnail": "https://i.ytimg.com/vi/K4DyBUG242c/hqdefault.jpg",
   "tracks": [
     {
-      "videoId": "dQw4w9WgXcQ",
-      "title": "Never Gonna Give You Up",
-      "artist": "Rick Astley",
+      "videoId": "K4DyBUG242c",
+      "title": "On & On (feat. Daniel Levi)",
+      "artist": "Cartoon",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 213,
-      "publishedAt": "2009-10-25T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+      "durationSeconds": 208,
+      "publishedAt": "2015-07-09T09:34:35-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/K4DyBUG242c/hqdefault.jpg"
     },
     {
-      "videoId": "9bZkp7q19f0",
-      "title": "Gangnam Style",
-      "artist": "PSY",
+      "videoId": "J2X5mJ3HDYE",
+      "title": "Invincible",
+      "artist": "DEAF KEV",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 253,
-      "publishedAt": "2012-07-15T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg"
+      "durationSeconds": 273,
+      "publishedAt": "2015-05-14T09:37:06-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/J2X5mJ3HDYE/hqdefault.jpg"
     },
     {
-      "videoId": "kJQP7kiw5Fk",
-      "title": "Despacito",
-      "artist": "Luis Fonsi ft. Daddy Yankee",
+      "videoId": "TW9d8vYrVFQ",
+      "title": "Sky High",
+      "artist": "Elektronomia",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 282,
-      "publishedAt": "2017-01-12T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg"
+      "durationSeconds": 238,
+      "publishedAt": "2017-01-02T08:19:27-08:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/TW9d8vYrVFQ/hqdefault.jpg"
     },
     {
-      "videoId": "JGwWNGJdvx8",
-      "title": "Shape of You",
-      "artist": "Ed Sheeran",
+      "videoId": "3nQNiWdeH2Q",
+      "title": "Heroes Tonight (feat. Johnning)",
+      "artist": "Janji",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 264,
-      "publishedAt": "2017-01-06T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg"
+      "durationSeconds": 208,
+      "publishedAt": "2015-06-09T09:00:00-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/3nQNiWdeH2Q/hqdefault.jpg"
     },
     {
-      "videoId": "RgKAFK5djSk",
-      "title": "See You Again",
-      "artist": "Wiz Khalifa ft. Charlie Puth",
+      "videoId": "p7ZsBPK656s",
+      "title": "Blank",
+      "artist": "Disfigure",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 234,
-      "publishedAt": "2015-04-10T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/RgKAFK5djSk/hqdefault.jpg"
+      "durationSeconds": 209,
+      "publishedAt": "2013-05-01T09:39:45-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/p7ZsBPK656s/hqdefault.jpg"
     },
     {
-      "videoId": "hT_nvWreIhg",
-      "title": "Believer",
-      "artist": "Imagine Dragons",
+      "videoId": "jK2aIUmmdP4",
+      "title": "My Heart",
+      "artist": "Different Heaven & EH!DE",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 204,
-      "publishedAt": "2017-02-01T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/hT_nvWreIhg/hqdefault.jpg"
+      "durationSeconds": 267,
+      "publishedAt": "2013-11-13T09:43:42-08:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/jK2aIUmmdP4/hqdefault.jpg"
     },
     {
-      "videoId": "YQHsXMglC9A",
-      "title": "Hello",
-      "artist": "Adele",
+      "videoId": "yJg-Y5byMMw",
+      "title": "Mortals (feat. Laura Brehm)",
+      "artist": "Warriyo",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 355,
-      "publishedAt": "2015-10-23T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/YQHsXMglC9A/hqdefault.jpg"
+      "durationSeconds": 230,
+      "publishedAt": "2016-12-15T09:48:20-08:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/yJg-Y5byMMw/hqdefault.jpg"
     },
     {
-      "videoId": "CevxZvSJLk8",
-      "title": "Roar",
-      "artist": "Katy Perry",
+      "videoId": "Su_fB9Rk_ks",
+      "title": "Firefly",
+      "artist": "Jim Yosef",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 256,
+      "publishedAt": "2015-06-28T11:50:30-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/Su_fB9Rk_ks/hqdefault.jpg"
+    },
+    {
+      "videoId": "fzNMd3Tu1Zw",
+      "title": "Energy",
+      "artist": "Elektronomia",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 198,
+      "publishedAt": "2016-09-18T09:25:55-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/fzNMd3Tu1Zw/hqdefault.jpg"
+    },
+    {
+      "videoId": "n4tK7LYFxI0",
+      "title": "Shine",
+      "artist": "Spektrem",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 259,
+      "publishedAt": "2013-05-05T09:32:30-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/n4tK7LYFxI0/hqdefault.jpg"
+    },
+    {
+      "videoId": "cNcy3J4x62M",
+      "title": "Limitless",
+      "artist": "Elektronomia",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 244,
+      "publishedAt": "2017-03-05T08:16:25-08:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/cNcy3J4x62M/hqdefault.jpg"
+    },
+    {
+      "videoId": "demo-warning-001",
+      "title": "Canción Restringida",
+      "artist": "Artista Fantasma",
       "status": "warning",
       "statusMessage": "Video privado",
-      "durationSeconds": 271,
-      "publishedAt": "2013-09-05T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/CevxZvSJLk8/hqdefault.jpg"
+      "thumbnailUrl": ""
     },
     {
       "videoId": "demo-broken-001",
@@ -93,22 +131,22 @@
       "thumbnailUrl": ""
     },
     {
-      "videoId": "e-ORhEE9VVg",
-      "title": "Blank Space",
-      "artist": "Taylor Swift",
+      "videoId": "demo-unchecked-001",
+      "title": "Pista Sin Verificar",
+      "artist": "Artista Reciente",
       "status": "unchecked",
       "statusMessage": null,
       "thumbnailUrl": ""
     },
     {
-      "videoId": "OPf0YbXqDm0",
-      "title": "Uptown Funk",
-      "artist": "Mark Ronson ft. Bruno Mars",
+      "videoId": "9rujCfYXhQc",
+      "title": "Fearless",
+      "artist": "Lost Sky",
       "status": "healthy",
       "statusMessage": null,
-      "durationSeconds": 270,
-      "publishedAt": "2014-11-10T00:00:00Z",
-      "thumbnailUrl": "https://i.ytimg.com/vi/OPf0YbXqDm0/hqdefault.jpg",
+      "durationSeconds": 194,
+      "publishedAt": "2017-09-09T08:07:29-07:00",
+      "thumbnailUrl": "https://i.ytimg.com/vi/9rujCfYXhQc/hqdefault.jpg",
       "removedFromSource": true
     }
   ]

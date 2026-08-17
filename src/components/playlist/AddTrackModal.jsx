@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
-import { playlistState, addTrackToPlaylist } from '../../state/playlistState.js';
+import { playlistState } from '../../state/playlistState.js';
+import { addTrackToPlaylist } from '../../state/playlistCrud.js';
 import { settingsState } from '../../state/settingsState.js';
 import { extractVideoId } from '../../api/youtubeApi.js';
 import { fetchVideoInfo } from '../../api/linkChecker.js';

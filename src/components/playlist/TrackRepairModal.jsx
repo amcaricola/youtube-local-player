@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { playlistState, updateTrackMetadata } from '../../state/playlistState.js';
+import { playlistState } from '../../state/playlistState.js';
+import { updateTrackMetadata } from '../../state/playlistCrud.js';
 import { settingsState } from '../../state/settingsState.js';
 import { searchVideos } from '../../api/youtubeApi.js';
 import { checkTrackNow } from '../../api/linkChecker.js';

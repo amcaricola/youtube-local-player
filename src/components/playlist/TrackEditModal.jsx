@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { playlistState, showToast, updateTrackMetadata, removeTrackFromPlaylist } from '../../state/playlistState.js';
+import { playlistState, showToast } from '../../state/playlistState.js';
+import { updateTrackMetadata, removeTrackFromPlaylist } from '../../state/playlistCrud.js';
 import { parseTrackMetadata } from '../../api/metadataParser.js';
 import { getArtistSuggestions } from './artistSuggestions.js';
 

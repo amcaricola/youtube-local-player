@@ -27,8 +27,8 @@ test('sin contraseña maestra la instancia no pide acceso', () => {
   assert.equal(authState.isLocked.value, false);
 });
 
-test('al definir contraseña queda activa y con sesión abierta', () => {
-  setMasterPassword('secreto');
+test('al definir contraseña queda activa y con sesión abierta', async () => {
+  await setMasterPassword('secreto');
   assert.equal(authState.passwordRequired.value, true);
   assert.equal(authState.isLocked.value, false);
   assert.ok(hasValidSession());
@@ -40,14 +40,14 @@ test('bloquear ahora descarta la sesión', () => {
   assert.equal(hasValidSession(), false);
 });
 
-test('contraseña incorrecta no desbloquea', () => {
-  const ok = unlockWithPassword('incorrecta');
+test('contraseña incorrecta no desbloquea', async () => {
+  const ok = await unlockWithPassword('incorrecta');
   assert.equal(ok, false);
   assert.equal(authState.isLocked.value, true);
 });
 
-test('contraseña correcta desbloquea y abre sesión de 30 días', () => {
-  const ok = unlockWithPassword('secreto');
+test('contraseña correcta desbloquea y abre sesión de 30 días', async () => {
+  const ok = await unlockWithPassword('secreto');
   assert.equal(ok, true);
   assert.equal(authState.isLocked.value, false);
   assert.ok(hasValidSession());
@@ -57,7 +57,7 @@ test('contraseña correcta desbloquea y abre sesión de 30 días', () => {
 });
 
 test('una sesión vencida vuelve a pedir la contraseña al recargar', async () => {
-  setMasterPassword('secreto');
+  await setMasterPassword('secreto');
   values.set('yt_session_expires_at', String(Date.now() - 1000));
 
   // Simular recarga: reimportar el módulo con cache-busting por query string.
@@ -66,8 +66,8 @@ test('una sesión vencida vuelve a pedir la contraseña al recargar', async () =
   assert.equal(fresh.authState.isLocked.value, true);
 });
 
-test('eliminar la contraseña quita la protección', () => {
-  setMasterPassword('');
+test('eliminar la contraseña quita la protección', async () => {
+  await setMasterPassword('');
   assert.equal(authState.passwordRequired.value, false);
   assert.equal(authState.isLocked.value, false);
   assert.equal(values.has('yt_master_password'), false);

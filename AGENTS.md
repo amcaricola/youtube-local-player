@@ -37,20 +37,28 @@ youtube-player/
     │   └── index.js           # Storage factory / active adapter export
     ├── api/                   # External APIs & Link Checkers
     │   ├── youtubeApi.js      # YouTube Data API v3 integration
-    │   ├── iframePlayer.js    # YouTube IFrame Player wrapper
+    │   ├── iframePlayer.js    # Player init + commands (play, seek, volume, fullscreen)
+    │   ├── playerEvents.js    # Handlers de eventos del reproductor (ready/state/error)
     │   ├── metadataParser.js  # Heuristic parser for Artist - Song Title
-    │   └── linkChecker.js     # Cascading link integrity validator
+    │   ├── linkChecker.js     # Cascading link integrity validator (barrido + estado)
+    │   └── linkStatus.js      # Helpers puros: recovery window, needsCheck, buildTrackUpdates
     ├── state/                 # Preact Signals State Management
-    │   ├── playlistState.js   # Playlists & Track management
+    │   ├── playlistState.js   # Núcleo: signals, filteredTracks, problemCounts, sort, toast
+    │   ├── playlistImports.js # Carga local, importación y sync con YouTube
+    │   ├── playlistCrud.js    # CRUD local de playlists y tracks
+    │   ├── playlistDemo.js    # Modo demo (loadDemoPlaylist, exitDemoMode)
+    │   ├── shuffleEngine.js   # Fisher-Yates + cola shuffle + repeat
+    │   ├── playbackQueue.js   # playNextTrack / playPrevTrack
     │   ├── playerState.js     # Current track, queue, shuffle, repeat, playback state
+    │   ├── modeState.js       # none / demo / servidor
+    │   ├── authState.js       # Auth servidor (token) vs local (legacy), initAuth
     │   └── settingsState.js   # API Key, storage settings, background check options
-    ├── components/            # UI Components
+    ├── components/            # UI Components (un archivo por funcionalidad, ~200 líneas)
     │   ├── common/            # Buttons, Modals, Badges, Inputs
-    │   ├── layout/            # Sidebar, Main Container, Header
+    │   ├── layout/            # AppHeader, AppSidebar, LockScreen, WelcomeScreen...
     │   ├── player/            # Bottom Audio/Video Player Bar, Volume, Seekbar
-    │   ├── playlist/          # Track Table, Metadata Editor Modal, Link Health Status
-    │   ├── queue/             # Up Next Queue, Shuffled View
-    │   └── settings/          # API Key setup & Database migration status
+    │   ├── playlist/          # PlaylistView (Header/Toolbar/Table), modals de edición
+    │   └── settings/          # SettingsModal + secciones (API Key, Storage, Toggles)
     └── utils/                 # Fisher-Yates shuffle, fuzzy filter helpers
         └── helpers.js
 ```
@@ -198,12 +206,14 @@ youtube-player/
 ### Phase 7: Version Split (Demo / Servidor) & UI Cleanup
 
 - [x] App "modes" via `src/state/modeState.js` (`app_mode` in localStorage: `none`/`demo`/`servidor`). On first run (no playlists, mode `none`) a `WelcomeScreen` offers two buttons: **Demo** (navigates to the `/demo` route) and **Servidor** (personal API Key / future self-hosted instance).
-- [x] **Demo lives at the `/demo` route** (pathname-based, no router lib; works on any base path since it matches the last path segment). Demo mode **never persists**: `storage/index.js` is a facade that swaps to `InMemoryStorageAdapter` when `modeState.isDemo` — refresh returns to the original `src/data/demoPlaylist.json` content. `loadDemoPlaylist()`/`exitDemoMode()` in `playlistState.js`; demo playlist id `demo-playlist`. A "Modo demo" header badge and "Salir del modo demo" (redirects to root `/`) live in the playlist config modal. Wipe-all also resets mode to `none`.
+- [x] **Demo lives at the `/demo` route** (pathname-based, no router lib; works on any base path since it matches the last path segment). Demo mode **never persists**: `storage/index.js` is a facade that swaps to `InMemoryStorageAdapter` when `modeState.isDemo` — refresh returns to the original `src/data/demoPlaylist.json` content. La demo también está **aislada a nivel de configuración** (`settingsState.js` es una fachada Proxy con fuentes persistentes vs de memoria según `isDemoActive()`, derivado de `src/state/demoRoute.js`): no lee `yt_api_key` ni los toggles del super usuario (arranca vacía/desactivados), y cualquier API key añadida en la demo solo vive en memoria (se descarta al recargar, nunca toca `localStorage`). `demoEnabled` es la única setting compartida (la decide el super usuario). `loadDemoPlaylist()`/`exitDemoMode()` in `playlistState.js`; demo playlist id `demo-playlist`. A "Modo demo" header badge and "Salir del modo demo" (redirects to root `/`) live in the playlist config modal. Wipe-all also resets mode to `none`.
 - [x] Import button is enabled in **both** versions and opens `ImportPlaylistModal` with two tabs: **Desde YouTube** (paste link + accept) and **Nueva playlist local** (`createLocalPlaylist()` makes an empty editable playlist). In demo both are ephemeral (in-memory).
 - [x] Per-playlist actions ("Revisar estado de los links", "Actualizar playlist desde YouTube", "Eliminar playlist activa") moved out of global Settings into `PlaylistSettingsModal`, opened via a wrench icon that appears on hover over the active playlist button in the sidebar. Global Settings only keeps API key, toggles, storage/backup, and wipe.
-- [x] **Contraseña maestra (super usuario, temporal en storage):** `authState.js` lee la contraseña de `localStorage` (`yt_master_password`) hasta que exista servidor/.env real. Si hay contraseña configurada, la versión servidor muestra `LockScreen` (solo super usuario; estilo Trilium) y la sesión dura **30 días** (`yt_session_expires_at`); al vencer se vuelve a pedir. En Ajustes: establecer/cambiar/eliminar contraseña y "Bloquear ahora". La demo y la bienvenida quedan libres; en servidor bloqueado el boot **no carga datos** hasta desbloquear.
+- [x] **Contraseña maestra (super usuario):** la contraseña **ya no vive en el navegador** en modo servidor: se valida contra el servidor (`POST /api/auth/*`, hash scrypt + token HMAC de 30 días). En local (sin servidor) se conserva el comportamiento legacy en `localStorage` (`yt_master_password`/`yt_session_expires_at`). Si hay contraseña configurada, la versión servidor muestra `LockScreen` (solo super usuario; estilo Trilium); al vencer la sesión se vuelve a pedir. En Ajustes de Usuario: establecer/cambiar/eliminar contraseña y "Bloquear ahora". La demo y la bienvenida quedan libres; en servidor bloqueado el boot **no carga datos** hasta desbloquear.
 - [x] **Toggle "Habilitar versión demo"** (`yt_demo_enabled` en `settingsState.js`): el super usuario decide si la ruta `/demo` existe. Con la demo deshabilitada, `modeState` ignora la ruta `/demo`, `WelcomeScreen` oculta el botón Demo y solo queda el acceso servidor (con contraseña si la hay).
-- [ ] Future: server version endpoint targeting (servidor mode), OAuth (deferred), master password moved from localStorage to `.env`/server, full-screen `.web/demo` route separation.
+- [x] **Servidor (Hono + @hono/node-server, sin DB):** el servidor responde la web y la API en un solo proceso. Sirve `dist/` con fallback SPA (`, `/demo`, etc.) y monta `/api/auth`. La biblioteca **sigue viviendo en el `localStorage` del navegador** (espacio de sobra). **`.env` solo lleva el puerto (`PORT`)**; la configuración de la app vive en `server/.config.json` (gitignored, el "config.ini" del proyecto): `authSecret` (auto-generado), `masterPasswordHash` (scrypt), `noAuthentication` y `youtubeApiKey` (F3). `loadConfig()` relee el archivo en cada petición (sin caché), así que editarlo tiene efecto inmediato (sin reiniciar). Flujos: `npm run build` → `npm start` (test de la versión servidor); en dev, Vite (5173) con proxy `/api` → Hono (`npm run dev:server`, puerto 3000). `authState.js` ramifica por `modeState.isServer` (API/token `yt_session_token`) vs local (legacy). El boot hace `initAuth()` antes de decidir LockScreen/cargar datos (`authState.ready` evita el flash). **Recuperación de acceso (estilo Trilium, `noAuthentication: true` en `server/.config.json`):** desactiva la autenticación (status reporta `noAuthentication:true`, el unlock queda en bypass y `authState.authDisabled` muestra un aviso en Ajustes de Usuario) para restablecer la contraseña maestra desde la UI sin sesión; al volverla a `false`, se pide la nueva contraseña. Surte efecto inmediato (leído por petición).
+- [x] **Respaldo al servidor sin base de datos (`/api/backup`, `server/routes/backup.js`):** el navegador empuja su `exportData()` (esquema v2, SOLO la biblioteca del usuario: `videoId`/`title`/`artist`/`addedAt`/`removedFromSource`; **nunca viajan la API key, toggles ni config del super usuario** — verificado por test) como JSON en `server/data/backups/` con rotación de 3 copias. Cliente: `src/api/backupSync.js` — push con debounce de 5s ante cualquier cambio de la biblioteca (efecto sobre `playlistState.playlists`) + red de seguridad cada 30 min + después del barrido del link checker (que también muta la señal); nunca empuja con biblioteca vacía (no pisa el respaldo con LockScreen/bienvenida) ni en demo. Restauración: `maybeRestoreFromServer()` en el boot si `yt_player_playlists` nunca se inicializó (navegador limpio / otro equipo) y botón **"Recuperar backup de servidor"** en Ajustes de Usuario y **"Restaurar desde servidor"** en Ajustes → Almacenamiento (reutilizan `importData`; los tracks quedan `unchecked` y el barrido repuebla metadata). El wipe ("Borrar todos mis datos") también borra el respaldo del servidor (`DELETE /api/backup`). Autenticación del endpoint: misma política que `/api/auth/password` (sin contraseña → abierto; con contraseña → exige token de sesión). Carpeta `server/data/` gitignored; `YT_BACKUP_DIR` permite aislar en tests.
+- [ ] Future: **F3 — proxy YouTube server-side** (`/api/youtube/video-info|playlist|search|check`, `YOUTUBE_API_KEY` en `server/.env`, protegido por token de sesión; el navegador deja de conocer la key), OAuth (deferred), full-screen `.web/demo` route separation.
 
 ---
 
