@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { settingsState } from '../../state/settingsState.js';
+import { modeState, setMode } from '../../state/modeState.js';
 import { checkApiKey } from '../../api/youtubeApi.js';
-import { runCascadingLinkCheck, linkCheckerState } from '../../api/linkChecker.js';
-import { playlistState, showToast, syncAllPlaylists, deletePlaylist, loadLocalPlaylists } from '../../state/playlistState.js';
+import { playlistState, showToast, loadLocalPlaylists } from '../../state/playlistState.js';
 import { playerState } from '../../state/playerState.js';
 import storage from '../../storage/index.js';
 
@@ -12,14 +12,12 @@ export function SettingsModal() {
   const [loading, setLoading] = useState(false);
 
   const [isValidated, setIsValidated] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [showStatusDetails, setShowStatusDetails] = useState(false);
   const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 5 * 1024 * 1024 });
   const importInputRef = useRef(null);
 
   useEffect(() => {
-    setConfirmDelete(false);
     setConfirmWipe(false);
     setShowStatusDetails(false);
     if (settingsState.isSettingsOpen.value) {
@@ -32,28 +30,6 @@ export function SettingsModal() {
     }
   }, [settingsState.isSettingsOpen.value]);
 
-  const handleManualSync = async () => {
-    const results = await syncAllPlaylists();
-    const total = results.reduce((acc, r) => ({ added: acc.added + r.added, removed: acc.removed + r.removed }), { added: 0, removed: 0 });
-    playlistState.syncNotice.value = results.length === 0
-      ? 'No hay playlists sincronizables'
-      : `Sincronizado: +${total.added} nuevas, ${total.removed} eliminadas de YouTube`;
-    if (results.length === 0 || total.added > 0 || total.removed > 0) {
-      setTimeout(() => { playlistState.syncNotice.value = null; }, 6000);
-    }
-  };
-
-  const handleDeletePlaylist = async () => {
-    const active = playlistState.activePlaylist.value;
-    if (!active) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    setConfirmDelete(false);
-    await deletePlaylist(active.id);
-  };
-
   // Borrado total de datos locales a petición del usuario (Developer Policies III.E.4.g).
   const handleWipeAll = async () => {
     if (!confirmWipe) {
@@ -63,6 +39,7 @@ export function SettingsModal() {
     setConfirmWipe(false);
     await storage.clearAll();
     settingsState.apiKey.value = '';
+    setMode('none');
     playerState.currentTrack.value = null;
     playlistState.playlists.value = [];
     playlistState.activePlaylist.value = null;
@@ -141,7 +118,6 @@ export function SettingsModal() {
     setInputKey(settingsState.apiKey.value);
     setStatus({ type: '', msg: '' });
     setIsValidated(false);
-    setConfirmDelete(false);
     setConfirmWipe(false);
     setShowStatusDetails(false);
   };
@@ -170,56 +146,6 @@ export function SettingsModal() {
         </div>
         
         <div class="space-y-4">
-          <div class="border-t border-white/10 pt-4">
-            <h3 class="text-sm font-semibold text-gray-300 mb-3">Mantenimiento de Playlists</h3>
-            <div class="space-y-2">
-              <button
-                onClick={() => runCascadingLinkCheck(true)}
-                disabled={linkCheckerState.isRunning.value}
-                class="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg font-medium transition-colors disabled:opacity-50 text-sm text-gray-200"
-              >
-                {linkCheckerState.isRunning.value ? (
-                  <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
-                ) : (
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                )}
-                {linkCheckerState.isRunning.value ? 'Verificando...' : 'Revisar estado de los links'}
-              </button>
-
-              <button
-                onClick={handleManualSync}
-                disabled={playlistState.isSyncing.value}
-                class="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg font-medium transition-colors disabled:opacity-50 text-sm text-gray-200"
-              >
-                {playlistState.isSyncing.value ? (
-                  <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
-                ) : (
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                )}
-                {playlistState.isSyncing.value ? 'Sincronizando...' : 'Actualizar playlists desde YouTube'}
-              </button>
-
-              {playlistState.syncNotice.value && (
-                <div class="text-xs p-3 rounded-lg bg-blue-500/15 text-blue-300">{playlistState.syncNotice.value}</div>
-              )}
-
-              <button
-                onClick={handleDeletePlaylist}
-                disabled={!playlistState.activePlaylist.value}
-                class={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-40 text-sm border ${
-                  confirmDelete
-                    ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white'
-                    : 'bg-red-500/10 hover:bg-red-500/25 border-red-500/30 text-red-400'
-                }`}
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                {confirmDelete
-                  ? `¿Confirmar? "${playlistState.activePlaylist.value?.title}" se eliminará definitivamente`
-                  : 'Eliminar playlist activa'}
-              </button>
-            </div>
-          </div>
-
           <div class="border-t border-white/10 pt-4">
             <button
               onClick={() => setShowStatusDetails(!showStatusDetails)}
@@ -273,10 +199,14 @@ export function SettingsModal() {
             <div>
               <div class="text-sm font-medium text-gray-200">Sincronizar playlists al iniciar</div>
               <div class="text-xs text-gray-400">Detecta canciones nuevas y eliminadas de cada playlist de YouTube</div>
+              {modeState.isDemo.value && (
+                <div class="text-xs text-amber-300/80 mt-1">No disponible en versión demo</div>
+              )}
             </div>
             <button
               onClick={() => settingsState.autoSyncPlaylists.value = !settingsState.autoSyncPlaylists.value}
-              class={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${settingsState.autoSyncPlaylists.value ? 'bg-blue-600' : 'bg-gray-700'}`}
+              disabled={modeState.isDemo.value}
+              class={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${settingsState.autoSyncPlaylists.value ? 'bg-blue-600' : 'bg-gray-700'} ${modeState.isDemo.value ? 'opacity-40 cursor-not-allowed' : ''}`}
               title={settingsState.autoSyncPlaylists.value ? 'Activado' : 'Desactivado'}
             >
               <span class={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${settingsState.autoSyncPlaylists.value ? 'left-[22px]' : 'left-0.5'}`}></span>
@@ -287,10 +217,14 @@ export function SettingsModal() {
             <div>
               <div class="text-sm font-medium text-gray-200">Verificación automática de links</div>
               <div class="text-xs text-gray-400">Revisa en segundo plano si los videos siguen disponibles</div>
+              {modeState.isDemo.value && (
+                <div class="text-xs text-amber-300/80 mt-1">No disponible en versión demo</div>
+              )}
             </div>
             <button
               onClick={() => settingsState.autoCheckLinks.value = !settingsState.autoCheckLinks.value}
-              class={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${settingsState.autoCheckLinks.value ? 'bg-blue-600' : 'bg-gray-700'}`}
+              disabled={modeState.isDemo.value}
+              class={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${settingsState.autoCheckLinks.value ? 'bg-blue-600' : 'bg-gray-700'} ${modeState.isDemo.value ? 'opacity-40 cursor-not-allowed' : ''}`}
               title={settingsState.autoCheckLinks.value ? 'Activado' : 'Desactivado'}
             >
               <span class={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${settingsState.autoCheckLinks.value ? 'left-[22px]' : 'left-0.5'}`}></span>

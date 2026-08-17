@@ -1,0 +1,115 @@
+{
+  "title": "Demo: Mezcla para Explorar",
+  "description": "Playlist de demostración con canciones de ejemplo para explorar la app. Los datos son fijos y se generan en local, sin usar tu API Key.",
+  "thumbnail": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+  "tracks": [
+    {
+      "videoId": "dQw4w9WgXcQ",
+      "title": "Never Gonna Give You Up",
+      "artist": "Rick Astley",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 213,
+      "publishedAt": "2009-10-25T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+    },
+    {
+      "videoId": "9bZkp7q19f0",
+      "title": "Gangnam Style",
+      "artist": "PSY",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 253,
+      "publishedAt": "2012-07-15T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg"
+    },
+    {
+      "videoId": "kJQP7kiw5Fk",
+      "title": "Despacito",
+      "artist": "Luis Fonsi ft. Daddy Yankee",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 282,
+      "publishedAt": "2017-01-12T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg"
+    },
+    {
+      "videoId": "JGwWNGJdvx8",
+      "title": "Shape of You",
+      "artist": "Ed Sheeran",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 264,
+      "publishedAt": "2017-01-06T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg"
+    },
+    {
+      "videoId": "RgKAFK5djSk",
+      "title": "See You Again",
+      "artist": "Wiz Khalifa ft. Charlie Puth",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 234,
+      "publishedAt": "2015-04-10T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/RgKAFK5djSk/hqdefault.jpg"
+    },
+    {
+      "videoId": "hT_nvWreIhg",
+      "title": "Believer",
+      "artist": "Imagine Dragons",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 204,
+      "publishedAt": "2017-02-01T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/hT_nvWreIhg/hqdefault.jpg"
+    },
+    {
+      "videoId": "YQHsXMglC9A",
+      "title": "Hello",
+      "artist": "Adele",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 355,
+      "publishedAt": "2015-10-23T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/YQHsXMglC9A/hqdefault.jpg"
+    },
+    {
+      "videoId": "CevxZvSJLk8",
+      "title": "Roar",
+      "artist": "Katy Perry",
+      "status": "warning",
+      "statusMessage": "Video privado",
+      "durationSeconds": 271,
+      "publishedAt": "2013-09-05T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/CevxZvSJLk8/hqdefault.jpg"
+    },
+    {
+      "videoId": "demo-broken-001",
+      "title": "Esto Ya No Existe",
+      "artist": "Artista Fantasma",
+      "status": "broken",
+      "statusMessage": "Video eliminado",
+      "brokenDaysAgo": 10,
+      "thumbnailUrl": ""
+    },
+    {
+      "videoId": "e-ORhEE9VVg",
+      "title": "Blank Space",
+      "artist": "Taylor Swift",
+      "status": "unchecked",
+      "statusMessage": null,
+      "thumbnailUrl": ""
+    },
+    {
+      "videoId": "OPf0YbXqDm0",
+      "title": "Uptown Funk",
+      "artist": "Mark Ronson ft. Bruno Mars",
+      "status": "healthy",
+      "statusMessage": null,
+      "durationSeconds": 270,
+      "publishedAt": "2014-11-10T00:00:00Z",
+      "thumbnailUrl": "https://i.ytimg.com/vi/OPf0YbXqDm0/hqdefault.jpg",
+      "removedFromSource": true
+    }
+  ]
+}

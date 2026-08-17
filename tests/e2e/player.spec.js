@@ -83,7 +83,7 @@ test('edita una canción, cierra la modal y muestra feedback', async ({ page }) 
 test('exporta e importa un respaldo JSON', async ({ page }) => {
   await seedApp(page);
 
-  await page.locator('header button').click();
+  await page.locator('header button[title="Ajustes"]').click();
   await expect(page.getByRole('heading', { name: 'Ajustes del Reproductor' })).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');

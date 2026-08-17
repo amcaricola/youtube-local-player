@@ -36,6 +36,37 @@ export const extractPlaylistId = (url) => {
 };
 
 /**
+ * Extrae un videoId de YouTube a partir de un link o de un ID crudo.
+ * Soporta youtu.be/ID, youtube.com/watch?v=ID, shorts, embed, live y
+ * un ID directo de 11 caracteres.
+ * @param {string} input
+ * @returns {string|null}
+ */
+export const extractVideoId = (input) => {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(trimmed)) return trimmed;
+
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    if (url.hostname === 'youtu.be') return validateId(url.pathname.slice(1));
+    if (url.hostname.includes('youtube.com') || url.hostname.includes('youtube-nocookie.com')) {
+      const v = url.searchParams.get('v');
+      if (v) return validateId(v);
+      const path = url.pathname.split('/').filter(Boolean);
+      if (path[0] === 'shorts' || path[0] === 'embed' || path[0] === 'live' || path[0] === 'v') {
+        return validateId(path[1]);
+      }
+    }
+  } catch (e) {
+    return null;
+  }
+  return null;
+};
+
+const validateId = (id) => (id && /^[A-Za-z0-9_-]{11}$/.test(id)) ? id : null;
+
+/**
  * Obtiene toda la información y videos de una playlist.
  * @param {string} playlistId 
  * @param {string} apiKey 

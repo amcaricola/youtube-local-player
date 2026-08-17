@@ -227,6 +227,20 @@ export const stopLinkCheck = () => {
 };
 
 /**
+ * Consulta la información completa de un único video (estado + metadata).
+ * Reutiliza el mismo request que el checker para no duplicar cuota.
+ * Usado al agregar una canción manualmente con API Key.
+ * @param {string} videoId
+ * @param {string} apiKey
+ * @returns {Promise<{status: string, message: string|null, snippet: object, durationSeconds: number|null}|null>}
+ */
+export const fetchVideoInfo = async (videoId, apiKey) => {
+  if (!apiKey || !videoId) return null;
+  const results = await fetchVideoStatus([videoId], apiKey);
+  return results[videoId] || null;
+};
+
+/**
  * Verifica un único track (usado tras reparar un link) y persiste el resultado.
  * @param {string} playlistId
  * @param {import('../types/player.js').Track} track

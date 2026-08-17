@@ -195,6 +195,16 @@ youtube-player/
 - [x] Add keyboard shortcuts (Space bar play/pause, arrows seek/volume, 'M' mute). Micro-animations are already present.
 - [x] Add automated regression, integration, and browser-level tests for metadata editing, artist suggestions, JSON backup restore, and keyboard shortcuts. Manual visual verification remains pending.
 
+### Phase 7: Version Split (Demo / Servidor) & UI Cleanup
+
+- [x] App "modes" via `src/state/modeState.js` (`app_mode` in localStorage: `none`/`demo`/`servidor`). On first run (no playlists, mode `none`) a `WelcomeScreen` offers two buttons: **Demo** (navigates to the `/demo` route) and **Servidor** (personal API Key / future self-hosted instance).
+- [x] **Demo lives at the `/demo` route** (pathname-based, no router lib; works on any base path since it matches the last path segment). Demo mode **never persists**: `storage/index.js` is a facade that swaps to `InMemoryStorageAdapter` when `modeState.isDemo` — refresh returns to the original `src/data/demoPlaylist.json` content. `loadDemoPlaylist()`/`exitDemoMode()` in `playlistState.js`; demo playlist id `demo-playlist`. A "Modo demo" header badge and "Salir del modo demo" (redirects to root `/`) live in the playlist config modal. Wipe-all also resets mode to `none`.
+- [x] Import button is enabled in **both** versions and opens `ImportPlaylistModal` with two tabs: **Desde YouTube** (paste link + accept) and **Nueva playlist local** (`createLocalPlaylist()` makes an empty editable playlist). In demo both are ephemeral (in-memory).
+- [x] Per-playlist actions ("Revisar estado de los links", "Actualizar playlist desde YouTube", "Eliminar playlist activa") moved out of global Settings into `PlaylistSettingsModal`, opened via a wrench icon that appears on hover over the active playlist button in the sidebar. Global Settings only keeps API key, toggles, storage/backup, and wipe.
+- [x] **Contraseña maestra (super usuario, temporal en storage):** `authState.js` lee la contraseña de `localStorage` (`yt_master_password`) hasta que exista servidor/.env real. Si hay contraseña configurada, la versión servidor muestra `LockScreen` (solo super usuario; estilo Trilium) y la sesión dura **30 días** (`yt_session_expires_at`); al vencer se vuelve a pedir. En Ajustes: establecer/cambiar/eliminar contraseña y "Bloquear ahora". La demo y la bienvenida quedan libres; en servidor bloqueado el boot **no carga datos** hasta desbloquear.
+- [x] **Toggle "Habilitar versión demo"** (`yt_demo_enabled` en `settingsState.js`): el super usuario decide si la ruta `/demo` existe. Con la demo deshabilitada, `modeState` ignora la ruta `/demo`, `WelcomeScreen` oculta el botón Demo y solo queda el acceso servidor (con contraseña si la hay).
+- [ ] Future: server version endpoint targeting (servidor mode), OAuth (deferred), master password moved from localStorage to `.env`/server, full-screen `.web/demo` route separation.
+
 ---
 
 agy --conversation=e77f45cc-b3a8-4704-8956-c544e978c2e8

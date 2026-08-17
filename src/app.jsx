@@ -2,15 +2,23 @@ import { useEffect, useState } from 'preact/hooks';
 import { effect } from '@preact/signals';
 import { PlayerBar } from './components/player/PlayerBar.jsx';
 import { SettingsModal } from './components/settings/SettingsModal.jsx';
+import { UserSettingsModal } from './components/settings/UserSettingsModal.jsx';
 import { TrackEditModal } from './components/playlist/TrackEditModal.jsx';
 import { TrackRepairModal } from './components/playlist/TrackRepairModal.jsx';
+import { ImportPlaylistModal } from './components/playlist/ImportPlaylistModal.jsx';
+import { PlaylistSettingsModal } from './components/playlist/PlaylistSettingsModal.jsx';
+import { WelcomeScreen } from './components/layout/WelcomeScreen.jsx';
+import { DemoIntroModal } from './components/layout/DemoIntroModal.jsx';
+import { LockScreen } from './components/layout/LockScreen.jsx';
+import { AddTrackModal } from './components/playlist/AddTrackModal.jsx';
 import { StatusBadge } from './components/common/StatusBadge.jsx';
 import { runCascadingLinkCheck, getRecoveryDaysLeft } from './api/linkChecker.js';
 import { initYouTubePlayer, playTrack, togglePlay, toggleMute, setVolume, seekTo } from './api/iframePlayer.js';
-import { extractPlaylistId } from './api/youtubeApi.js';
 import { playerState } from './state/playerState.js';
 import { settingsState } from './state/settingsState.js';
-import { playlistState, loadLocalPlaylists, importYouTubePlaylist, syncAllPlaylists, playNextTrack, filteredTracks, problemCounts, toggleSort } from './state/playlistState.js';
+import { modeState } from './state/modeState.js';
+import { authState } from './state/authState.js';
+import { playlistState, loadLocalPlaylists, loadDemoPlaylist, exitDemoMode, syncAllPlaylists, playNextTrack, filteredTracks, problemCounts, toggleSort } from './state/playlistState.js';
 
 // Auto-play siguiente canción cuando termine
 effect(() => {
@@ -30,7 +38,6 @@ effect(() => {
 });
 
 export function App() {
-  const [importUrl, setImportUrl] = useState('');
   const [artistInput, setArtistInput] = useState('');
 
   const addArtistFilterValue = (value) => {
@@ -53,8 +60,18 @@ export function App() {
     playlistState.artistFilters.value = playlistState.artistFilters.value.filter(item => item !== artist);
   };
 
-  useEffect(() => {
-    loadLocalPlaylists().then(async () => {
+useEffect(() => {
+    (async () => {
+      if (modeState.isDemo.value) {
+        await loadDemoPlaylist();
+        return;
+      }
+      // Versión servidor con contraseña maestra: no cargar datos hasta
+      // desbloquear (la LockScreen oculta la biblioteca a quien no la sepa).
+      if (authState.passwordRequired.value && authState.isLocked.value) {
+        return;
+      }
+      await loadLocalPlaylists();
       if (settingsState.autoSyncPlaylists.value) {
         const results = await syncAllPlaylists();
         const total = results.reduce((acc, r) => ({ added: acc.added + r.added, removed: acc.removed + r.removed }), { added: 0, removed: 0 });
@@ -64,8 +81,8 @@ export function App() {
         }
       }
       runCascadingLinkCheck();
-    });
-  }, []);
+    })();
+  }, [authState.isLocked.value]);
 
   useEffect(() => {
     const handleShortcut = (event) => {
@@ -115,23 +132,6 @@ export function App() {
     return () => window.removeEventListener('keydown', handleShortcut);
   }, []);
 
-  const handleImport = async () => {
-    const playlistId = extractPlaylistId(importUrl);
-    if (!playlistId) {
-      alert("No se pudo extraer el ID de la Playlist. Usa un link válido como https://www.youtube.com/playlist?list=...");
-      return;
-    }
-    if (!settingsState.apiKey.value) {
-      alert("Por favor, configura tu API Key en los Ajustes primero.");
-      settingsState.isSettingsOpen.value = true;
-      return;
-    }
-    
-    await importYouTubePlaylist(playlistId, settingsState.apiKey.value);
-    setImportUrl('');
-    runCascadingLinkCheck();
-  };
-
   const activePlaylist = playlistState.activePlaylist.value;
 
   useEffect(() => {
@@ -164,6 +164,13 @@ export function App() {
     return date.toLocaleDateString();
   };
 
+  // La versión servidor exige la contraseña maestra si está configurada y no
+  // hay sesión válida; la demo y la pantalla de bienvenida quedan libres.
+  const showLock = modeState.isServer.value && authState.passwordRequired.value && authState.isLocked.value;
+  if (showLock) {
+    return <LockScreen />;
+  }
+
   return (
     <div class="h-screen w-full flex flex-col bg-gray-900 text-gray-100">
       <header class="h-16 glass-dark flex items-center justify-between px-6 z-10 shrink-0 border-b border-white/5">
@@ -171,9 +178,31 @@ export function App() {
           YouTube Player Local
         </h1>
         <div class="flex items-center gap-2">
+          {modeState.isDemo.value && (
+            <span class="text-xs px-2.5 py-1 rounded-full bg-blue-600/20 border border-blue-400/30 text-blue-200 font-medium">
+              Modo demo
+              <button
+                onClick={() => exitDemoMode()}
+                class="ml-2 px-1.5 py-0.5 rounded-md bg-blue-600/40 hover:bg-blue-600/70 border border-blue-400/40 text-blue-100 text-xs font-medium transition-colors"
+                title="Salir del modo demo"
+              >
+                Salir demo
+              </button>
+            </span>
+          )}
+          {!modeState.isDemo.value && (
+            <button
+              onClick={() => settingsState.isUserSettingsOpen.value = true}
+              class="p-2 rounded-full hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+              title="Ajustes de usuario"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+            </button>
+          )}
           <button 
             onClick={() => settingsState.isSettingsOpen.value = true}
             class="p-2 rounded-full hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+            title="Ajustes"
           >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
         </button>
@@ -184,36 +213,38 @@ export function App() {
         <aside class="w-64 glass border-r border-white/5 flex flex-col hidden md:flex">
           <div class="p-4 border-b border-white/5">
             <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Importar Playlist</h2>
-            <div class="flex flex-col gap-2">
-              <input 
-                type="text" 
-                value={importUrl}
-                onInput={(e) => setImportUrl(e.target.value)}
-                placeholder="URL de YouTube..." 
-                class="w-full bg-black/30 border border-white/10 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-              />
-              <button 
-                onClick={handleImport}
-                disabled={playlistState.isLoading.value || !importUrl}
-                class="w-full py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition-colors disabled:opacity-50"
-              >
-                {playlistState.isLoading.value ? 'Cargando...' : 'Importar'}
-              </button>
-            </div>
+            <button
+              onClick={() => playlistState.isImportOpen.value = true}
+              class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition-colors"
+              title="Importar una playlist de YouTube o crear una playlist local"
+            >
+              Importar
+            </button>
           </div>
           
           <div class="p-4 flex-1 overflow-y-auto flex flex-col">
             <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Tus Listas</h2>
              {playlistState.playlists.value.map(pl => (
-               <button 
-                key={pl.id}
-                onClick={() => playlistState.activePlaylist.value = pl}
-                class={`w-full text-left px-3 py-2 rounded-md transition-colors text-sm truncate mb-1 ${
-                  activePlaylist?.id === pl.id ? 'bg-blue-600 text-white' : 'hover:bg-white/10'
-                }`}
-              >
-                 {pl.title}
-               </button>
+               <div key={pl.id} class="relative group mb-1">
+                <button
+                  onClick={() => playlistState.activePlaylist.value = pl}
+                  class={`w-full text-left px-3 py-2 pr-9 rounded-md transition-colors text-sm truncate ${
+                    activePlaylist?.id === pl.id ? 'bg-blue-600 text-white' : 'hover:bg-white/10'
+                  }`}
+                >
+                   {pl.title}
+                </button>
+                {activePlaylist?.id === pl.id && (
+                  <button
+                    onClick={() => playlistState.isPlaylistSettingsOpen.value = true}
+                    class="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-white/20"
+                    aria-label="Configuración de la playlist"
+                    title="Configuración de la playlist"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                  </button>
+                )}
+               </div>
              ))}
              {activePlaylist && (
                <div class="w-full h-[200px] max-h-[200px] mt-auto shrink-0 overflow-hidden rounded-xl bg-black border border-white/10 shadow-xl">
@@ -249,9 +280,9 @@ export function App() {
                 )}
               </div>
               
-              {/* Playlist Table */}
-              <div class="px-8 pb-8 flex-1 min-h-0 overflow-y-auto flex flex-col">
-                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+{/* Toolbar fija (filtros siempre visibles) */}
+              <div class="px-8 pb-4 shrink-0">
+                <div class="flex flex-wrap items-center justify-between gap-3">
                   <div class="flex flex-wrap items-center gap-2">
                     <div class="relative w-64">
                     <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -315,7 +346,16 @@ export function App() {
                       )}
                     </div>
                   </div>
-                  {(totalProblems > 0) && (
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => playlistState.isAddTrackOpen.value = true}
+                      class="flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-sm font-semibold text-white transition-all shadow-lg"
+                      title="Agregar una canción a esta playlist"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                      <span>Agregar canción</span>
+                    </button>
+                    {(totalProblems > 0) && (
                     <button
                       onClick={() => playlistState.problemFilter.value = !playlistState.problemFilter.value}
                       class={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
@@ -331,6 +371,7 @@ export function App() {
                       {playlistState.problemFilter.value && <span class="text-gray-300">• solo problemas</span>}
                     </button>
                   )}
+                  </div>
                 </div>
                 {playlistState.problemFilter.value && filteredTracks.value.length === 0 && (
                   totalProblems === 0 ? (
@@ -350,12 +391,15 @@ export function App() {
                   </div>
                   )
                 )}
-                
+              </div>
+
+              {/* Área scrollable: solo la tabla */}
+              <div class="px-8 pb-8 flex-1 min-h-0 overflow-y-auto">
                 <table class="w-full text-left text-sm text-gray-400">
-                  <thead class="border-b border-white/10 text-gray-400 uppercase text-xs">
+                  <thead class="border-b border-white/10 text-gray-400 uppercase text-xs sticky top-0 z-10 bg-gray-900">
                     <tr>
-                      <th class="pb-3 w-12 text-center">#</th>
-                      <th class="pb-3">
+                      <th class="pt-2 pb-3 w-12 text-center">#</th>
+                      <th class="pt-2 pb-3">
                         <button
                           onClick={() => toggleSort('title')}
                           class={`inline-flex items-center gap-1 uppercase hover:text-white transition-colors ${playlistState.sortKey.value === 'title' ? 'text-blue-400' : ''}`}
@@ -369,7 +413,7 @@ export function App() {
                           )}
                         </button>
                       </th>
-                      <th class="pb-3">
+                      <th class="pt-2 pb-3">
                         <button
                           onClick={() => toggleSort('artist')}
                           class={`inline-flex items-center gap-1 uppercase hover:text-white transition-colors ${playlistState.sortKey.value === 'artist' ? 'text-blue-400' : ''}`}
@@ -383,7 +427,7 @@ export function App() {
                           )}
                         </button>
                       </th>
-                      <th class="pb-3 min-w-[90px]">
+                      <th class="pt-2 pb-3 min-w-[90px]">
                         <button
                           onClick={() => toggleSort('publishedAt')}
                           class={`inline-flex items-center gap-1 uppercase hover:text-white transition-colors ${playlistState.sortKey.value === 'publishedAt' ? 'text-blue-400' : ''}`}
@@ -397,7 +441,7 @@ export function App() {
                           )}
                         </button>
                       </th>
-                      <th class="pb-3 text-right pr-3 min-w-[90px]">Estado</th>
+                      <th class="pt-2 pb-3 text-right pr-3 min-w-[90px]">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -483,10 +527,20 @@ export function App() {
               </div>
 
             </div>
+) : modeState.mode.value === 'none' ? (
+            <WelcomeScreen />
           ) : (
             <div class="h-full flex flex-col items-center justify-center text-gray-500">
               <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
               <p>Importa o selecciona una playlist para comenzar.</p>
+              {modeState.isServer.value && (
+                <button
+                  onClick={() => { location.href = './demo'; }}
+                  class="mt-4 text-xs text-purple-300 hover:text-purple-200 underline underline-offset-2"
+                >
+                  ¿Probar la versión demo?
+                </button>
+              )}
             </div>
           )}
 
@@ -494,7 +548,12 @@ export function App() {
       </main>
 
       <PlayerBar />
+      <DemoIntroModal />
+      <AddTrackModal />
       <SettingsModal />
+      <UserSettingsModal />
+      <ImportPlaylistModal />
+      <PlaylistSettingsModal />
       <TrackEditModal />
       <TrackRepairModal />
 

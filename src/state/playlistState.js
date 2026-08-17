@@ -4,6 +4,7 @@ import { parseTrackMetadata } from '../api/metadataParser.js';
 import storage from '../storage/index.js';
 import { playerState } from './playerState.js';
 import { settingsState } from './settingsState.js';
+import { modeState, setMode } from './modeState.js';
 
 export const playlistState = {
   playlists: signal([]),
@@ -20,6 +21,10 @@ export const playlistState = {
   editingTrack: signal(null),
   repairTrack: signal(null),
   toast: signal(null),
+  isImportOpen: signal(false),
+  isAddTrackOpen: signal(false),
+  isPlaylistSettingsOpen: signal(false),
+  showDemoIntro: signal(false),
   isSyncing: signal(false),
   syncNotice: signal(null),
   visibleLimit: signal(100),
@@ -168,13 +173,21 @@ effect(() => {
 });
 
 /**
- * Carga las playlists desde el storage local
+ * Carga las playlists desde el storage local.
+ * Si aparece la playlist de demo persistida (legado de una versión anterior
+ * que sí guardaba la demo en localStorage), se purga: la demo vive solo en
+ * memoria y en la ruta /demo, nunca en el almacenamiento del servidor.
  */
 export const loadLocalPlaylists = async () => {
   const lists = await storage.getPlaylists();
-  playlistState.playlists.value = lists;
-  if (lists.length > 0 && !playlistState.activePlaylist.value) {
-    playlistState.activePlaylist.value = lists[0];
+  let clean = lists;
+  if (!modeState.isDemo.value && lists.some(p => p.id === DEMO_PLAYLIST_ID)) {
+    await storage.deletePlaylist(DEMO_PLAYLIST_ID);
+    clean = lists.filter(p => p.id !== DEMO_PLAYLIST_ID);
+  }
+  playlistState.playlists.value = clean;
+  if (clean.length > 0 && !playlistState.activePlaylist.value) {
+    playlistState.activePlaylist.value = clean[0];
   }
 };
 
@@ -362,6 +375,144 @@ export const deletePlaylist = async (playlistId) => {
   if (playlistState.activePlaylist.value?.id === playlistId) {
     playlistState.activePlaylist.value = playlistState.playlists.value[0] || null;
   }
+};
+
+export const DEMO_PLAYLIST_ID = 'demo-playlist';
+
+/**
+ * Carga la playlist de demostración desde el JSON local (no usa API Key).
+ * Los timestamps volátiles (brokenAt, addedAt, etc.) se calculan relativos
+ * al momento actual para que los badges se vean frescos.
+ * @param {object|null} [demoData] Datos de la demo inyectados (usado en tests;
+ *   en el navegador se importa el JSON automáticamente).
+ */
+export const loadDemoPlaylist = async (demoData = null) => {
+  if (!demoData) {
+    const mod = await import('../data/demoPlaylist.json');
+    demoData = mod.default;
+  }
+  const now = Date.now();
+  const DAY = 86400000;
+
+  const tracks = demoData.tracks.map((t, i) => {
+    const isBroken = t.status === 'broken';
+    const isUnchecked = t.status === 'unchecked';
+    const brokenDaysAgo = t.brokenDaysAgo || 0;
+    return {
+      id: `demo-track-${i + 1}`,
+      videoId: t.videoId,
+      title: t.title,
+      artist: t.artist,
+      thumbnailUrl: t.thumbnailUrl || '',
+      publishedAt: isBroken || isUnchecked ? null : t.publishedAt,
+      durationSeconds: isBroken || isUnchecked ? null : t.durationSeconds,
+      status: t.status,
+      statusMessage: t.statusMessage || null,
+      brokenAt: isBroken ? now - brokenDaysAgo * DAY : null,
+      metadataFetchedAt: isBroken || isUnchecked ? 0 : now - 2 * DAY,
+      removedFromSource: Boolean(t.removedFromSource),
+      addedAt: now - (brokenDaysAgo + 20) * DAY,
+      lastCheckedAt: isUnchecked ? null : isBroken ? now - brokenDaysAgo * DAY : now - DAY
+    };
+  });
+
+  const playlist = {
+    id: DEMO_PLAYLIST_ID,
+    youtubePlaylistId: null,
+    title: demoData.title,
+    description: demoData.description,
+    thumbnail: demoData.thumbnail,
+    tracks,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  await storage.savePlaylist(playlist);
+  await loadLocalPlaylists();
+  playlistState.activePlaylist.value =
+    playlistState.playlists.value.find(p => p.id === DEMO_PLAYLIST_ID) || playlist;
+  setMode('demo');
+  playlistState.showDemoIntro.value = true;
+  showToast('Modo demo activado');
+};
+
+/**
+ * Sale del modo demo: elimina la playlist de ejemplo, vuelve a 'none' y
+ * redirige a la raíz (la demo vive en la ruta /demo).
+ */
+export const exitDemoMode = async () => {
+  await storage.deletePlaylist(DEMO_PLAYLIST_ID);
+  await loadLocalPlaylists();
+  if (playlistState.activePlaylist.value?.id === DEMO_PLAYLIST_ID) {
+    playlistState.activePlaylist.value = null;
+  }
+  setMode('none');
+  if (typeof location !== 'undefined') {
+    const segments = location.pathname.split('/').filter(Boolean);
+    if (segments[segments.length - 1] === 'demo') {
+      location.href = './';
+      return;
+    }
+  }
+  showToast('Saliste del modo demo');
+};
+
+/**
+ * Crea una playlist local vacía (sin origen en YouTube) y la deja activa.
+ * En modo demo se guarda solo en memoria.
+ * @param {string} title
+ */
+export const createLocalPlaylist = async (title) => {
+  const now = Date.now();
+  const playlist = {
+    id: `local_${now}_${Math.random().toString(36).slice(2, 7)}`,
+    youtubePlaylistId: null,
+    title: title.trim() || 'Nueva playlist',
+    description: '',
+    thumbnail: '',
+    tracks: [],
+    createdAt: now,
+    updatedAt: now
+  };
+
+  await storage.savePlaylist(playlist);
+  await loadLocalPlaylists();
+  playlistState.activePlaylist.value =
+    playlistState.playlists.value.find(p => p.id === playlist.id) || playlist;
+  showToast('Playlist local creada');
+};
+
+/**
+ * Agrega una canción creada manualmente a una playlist local.
+ * Rechaza duplicados por videoId y persiste el track (en demo, en memoria).
+ * @param {string} playlistId
+ * @param {import('../types/player.js').Track} track
+ * @returns {Promise<boolean>} true si se agregó, false si ya existía
+ */
+export const addTrackToPlaylist = async (playlistId, track) => {
+  const playlists = await storage.getPlaylists();
+  const playlist = playlists.find(p => p.id === playlistId);
+  if (!playlist) return false;
+  if (playlist.tracks.some(t => t.videoId === track.videoId)) {
+    showToast('Esa canción ya está en la playlist');
+    return false;
+  }
+
+  const now = Date.now();
+  const newTrack = { ...track, addedAt: now };
+  const updatedPlaylist = { ...playlist, tracks: [...playlist.tracks, newTrack], updatedAt: now };
+
+  await storage.savePlaylist(updatedPlaylist);
+
+  const applyAdd = (pl) => (pl.id === playlistId ? updatedPlaylist : pl);
+
+  playlistState.playlists.value = playlistState.playlists.value.map(applyAdd);
+  if (playlistState.activePlaylist.value?.id === playlistId) {
+    playlistState.activePlaylist.value = updatedPlaylist;
+  }
+
+  showToast('Canción agregada');
+  return true;
 };
 
 /**
