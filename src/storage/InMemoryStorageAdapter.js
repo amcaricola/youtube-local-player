@@ -1,29 +1,5 @@
 import { StorageAdapter } from './StorageAdapter.js';
-
-const toBackupTrack = (t) => ({
-  videoId: t.videoId,
-  title: t.title,
-  artist: t.artist,
-  addedAt: t.addedAt ?? null,
-  removedFromSource: !!t.removedFromSource
-});
-
-const fromBackupTrack = (t, now) => ({
-  id: t.id || t.videoId,
-  videoId: t.videoId,
-  title: t.title || 'Sin título',
-  artist: t.artist || 'Desconocido',
-  thumbnailUrl: '',
-  publishedAt: null,
-  durationSeconds: null,
-  status: 'unchecked',
-  statusMessage: null,
-  brokenAt: null,
-  metadataFetchedAt: 0,
-  removedFromSource: !!t.removedFromSource,
-  addedAt: t.addedAt || now,
-  lastCheckedAt: null
-});
+import { exportPlaylists, playlistsFromBackup } from './trackModel.js';
 
 /**
  * Storage de solo memoria, usado en el modo demo (ruta `/demo`):
@@ -70,15 +46,7 @@ export class InMemoryStorageAdapter extends StorageAdapter {
   }
 
   async exportData() {
-    const backup = this.playlists.map(pl => ({
-      id: pl.id,
-      youtubePlaylistId: pl.youtubePlaylistId ?? null,
-      title: pl.title,
-      description: pl.description ?? '',
-      createdAt: pl.createdAt ?? null,
-      tracks: (pl.tracks || []).map(toBackupTrack)
-    }));
-    return JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), playlists: backup });
+    return exportPlaylists(this.playlists);
   }
 
   async importData(jsonData) {
@@ -92,18 +60,6 @@ export class InMemoryStorageAdapter extends StorageAdapter {
       throw new Error('Failed to parse backup data');
     }
 
-    const now = Date.now();
-    this.playlists = data.playlists.map((pl, i) => ({
-      id: pl.id || `pl_${now}_${i}`,
-      youtubePlaylistId: pl.youtubePlaylistId ?? null,
-      title: pl.title || 'Playlist importada',
-      description: pl.description || '',
-      thumbnail: pl.thumbnail || '',
-      tracks: (Array.isArray(pl.tracks) ? pl.tracks : [])
-        .filter(t => t && t.videoId)
-        .map(t => fromBackupTrack(t, now)),
-      createdAt: pl.createdAt || now,
-      updatedAt: now
-    }));
+    this.playlists = playlistsFromBackup(data);
   }
 }

@@ -14,9 +14,16 @@ globalThis.localStorage = {
 const makeToken = () =>
   Buffer.from(JSON.stringify({ exp: Date.now() + 86400000000 })).toString('base64url') + '.sig';
 
+let sessionRevoked = false;
+
 globalThis.fetch = async (path, options = {}) => {
   if (path === '/api/auth/status') {
     return new Response(JSON.stringify({ passwordSet: true }), { status: 200 });
+  }
+  if (path === '/api/auth/verify') {
+    const hasAuth = !!(options.headers || {}).Authorization;
+    if (hasAuth && !sessionRevoked) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    return new Response(JSON.stringify({ ok: false }), { status: 401 });
   }
   if (path === '/api/auth/unlock') {
     const { password } = JSON.parse(options.body || '{}');
@@ -32,7 +39,7 @@ globalThis.fetch = async (path, options = {}) => {
 // app_mode = 'servidor' antes de importar: authState arranca en modo servidor.
 values.set('app_mode', 'servidor');
 
-const { authState, initAuth, unlockWithPassword, setMasterPassword, lockNow, hasValidSession } =
+const { authState, initAuth, unlockWithPassword, setMasterPassword, lockNow, hasValidSession, reverify } =
   await import(`../src/state/authState.js?server=${Date.now()}`);
 const { setMode } = await import('../src/state/modeState.js');
 
@@ -84,4 +91,18 @@ test('setMasterPassword delega al servidor y abre sesión', async () => {
   assert.equal(ok, true);
   assert.equal(authState.passwordRequired.value, true);
   assert.equal(authState.isLocked.value, false);
+});
+
+test('reverify confirma la sesión con el servidor y re-bloquea si se revoca', async () => {
+  await unlockWithPassword('clave');
+  assert.equal(authState.isLocked.value, false);
+
+  // Sesión activa: el servidor responde OK y la instancia sigue desbloqueada.
+  await reverify();
+  assert.equal(authState.isLocked.value, false);
+
+  // Sesión revocada en el servidor (401 en /verify): vuelve el bloqueo.
+  sessionRevoked = true;
+  await reverify();
+  assert.equal(authState.isLocked.value, true);
 });

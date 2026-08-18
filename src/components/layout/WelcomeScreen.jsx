@@ -13,8 +13,8 @@ export function WelcomeScreen() {
   return (
     <div class="h-full flex flex-col items-center justify-center gap-10 p-8">
       <div class="text-center max-w-lg">
-        <h2 class="text-3xl font-bold mb-3">Bienvenido a YouTube Player Local</h2>
-        <p class="text-gray-400">Elige hacia dónde quieres apuntar. Todos tus datos se guardan localmente en tu navegador.</p>
+        <h2 class="text-3xl font-bold mb-3">Bienvenido a YouTube Player</h2>
+        <p class="text-gray-400">Elige cómo empezar. Tus playlists se guardan en tu instancia (servidor) y quedan disponibles en todos tus dispositivos.</p>
       </div>
 
       <div class={`grid gap-6 w-full ${settingsState.demoEnabled.value ? 'grid-cols-1 md:grid-cols-2 max-w-3xl' : 'max-w-sm'}`}>

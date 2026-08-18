@@ -8,7 +8,7 @@ import { TrackRepairModal } from './components/playlist/TrackRepairModal.jsx';
 import { ImportPlaylistModal } from './components/playlist/ImportPlaylistModal.jsx';
 import { PlaylistSettingsModal } from './components/playlist/PlaylistSettingsModal.jsx';
 import { DemoIntroModal } from './components/layout/DemoIntroModal.jsx';
-import { LockScreen } from './components/layout/LockScreen.jsx';
+import { AuthGate } from './components/layout/AuthGate.jsx';
 import { AddTrackModal } from './components/playlist/AddTrackModal.jsx';
 import { AppHeader } from './components/layout/AppHeader.jsx';
 import { AppSidebar } from './components/layout/AppSidebar.jsx';
@@ -16,14 +16,14 @@ import { PlaylistView } from './components/playlist/PlaylistView.jsx';
 import { runCascadingLinkCheck } from './api/linkChecker.js';
 import { initYouTubePlayer, playTrack, togglePlay, toggleMute, setVolume, seekTo } from './api/iframePlayer.js';
 import { playerState } from './state/playerState.js';
-import { settingsState } from './state/settingsState.js';
+import { settingsState, refreshKeyStatus } from './state/settingsState.js';
 import { modeState } from './state/modeState.js';
-import { authState, initAuth } from './state/authState.js';
+import { authState } from './state/authState.js';
 import { playlistState } from './state/playlistState.js';
 import { loadLocalPlaylists, syncAllPlaylists } from './state/playlistImports.js';
 import { loadDemoPlaylist } from './state/playlistDemo.js';
 import { playNextTrack } from './state/playbackQueue.js';
-import { maybeRestoreFromServer } from './api/backupSync.js';
+import storage from './storage/index.js';
 
 // Auto-play siguiente canción cuando termine
 effect(() => {
@@ -43,22 +43,35 @@ effect(() => {
 });
 
 export function App() {
+  return (
+    <AuthGate>
+      <AppContent />
+    </AuthGate>
+  );
+}
+
+/**
+ * Contenido de la app. Solo se monta cuando AuthGate ya confirmó la
+ * autenticación (splash + LockScreen resueltos), así que el boot puede cargar
+ * la biblioteca del servidor y arrancar el link checker sin exponer nada a
+ * quien no tiene sesión.
+ */
+function AppContent() {
   useEffect(() => {
     (async () => {
-      await initAuth();
       if (modeState.isDemo.value) {
         await loadDemoPlaylist();
         return;
       }
-      // Versión servidor con contraseña maestra: no cargar datos hasta
-      // desbloquear (la LockScreen oculta la biblioteca a quien no la sepa).
-      if (authState.passwordRequired.value && authState.isLocked.value) {
-        return;
-      }
-      // Si el navegador está limpio (primer uso / nuevo equipo) y el servidor
-      // tiene un respaldo, se restaura la biblioteca automáticamente.
-      await maybeRestoreFromServer();
+      // Defensivo: AuthGate ya bloqueó si hace falta; el boot corre desbloqueado.
+      if (authState.isLocked.value) return;
+      // El servidor es la fuente de verdad de la biblioteca (en modo servidor):
+      // init() carga /api/library (y migra datos legacy de localStorage la
+      // primera vez).
+      await storage.init();
       await loadLocalPlaylists();
+      // El estado de la API key del servidor (F3) marca si hay key configurada.
+      await refreshKeyStatus();
       if (settingsState.autoSyncPlaylists.value) {
         const results = await syncAllPlaylists();
         const total = results.reduce((acc, r) => ({ added: acc.added + r.added, removed: acc.removed + r.removed }), { added: 0, removed: 0 });
@@ -69,7 +82,7 @@ export function App() {
       }
       runCascadingLinkCheck();
     })();
-  }, [authState.isLocked.value, authState.ready.value, modeState.isServer.value]);
+  }, [authState.isLocked.value, modeState.isServer.value]);
 
   useEffect(() => {
     const handleShortcut = (event) => {
@@ -124,17 +137,6 @@ export function App() {
   useEffect(() => {
     if (activePlaylist) initYouTubePlayer();
   }, [activePlaylist?.id]);
-
-  // El servidor es la fuente de verdad del acceso: si tiene contraseña, la
-  // app muestra siempre la LockScreen salvo sesión válida, sin importar el
-  // app_mode ni el origen (navegador privado incluido). La demo queda libre.
-  const showLock = !modeState.isDemo.value && authState.ready.value && authState.passwordRequired.value && authState.isLocked.value;
-  if (!modeState.isDemo.value && !authState.ready.value) {
-    return <div class="h-screen w-full flex items-center justify-center bg-gray-900" />;
-  }
-  if (showLock) {
-    return <LockScreen />;
-  }
 
   return (
     <div class="h-screen w-full flex flex-col bg-gray-900 text-gray-100">

@@ -2,7 +2,8 @@ import { useState } from 'preact/hooks';
 import { playlistState, showToast } from '../../state/playlistState.js';
 import { importYouTubePlaylist } from '../../state/playlistImports.js';
 import { createLocalPlaylist } from '../../state/playlistCrud.js';
-import { settingsState } from '../../state/settingsState.js';
+import { settingsState, refreshKeyStatus } from '../../state/settingsState.js';
+import { modeState } from '../../state/modeState.js';
 import { extractPlaylistId } from '../../api/youtubeApi.js';
 import { runCascadingLinkCheck } from '../../api/linkChecker.js';
 
@@ -28,7 +29,12 @@ export function ImportPlaylistModal() {
       setError('No se pudo extraer el ID de la Playlist. Usa un link válido como https://www.youtube.com/playlist?list=...');
       return;
     }
-    if (!settingsState.apiKey.value) {
+    if (modeState.isDemo.value) {
+      setError('No disponible en versión demo.');
+      return;
+    }
+    await refreshKeyStatus();
+    if (!settingsState.hasServerKey.value) {
       setError('Configura tu API Key en los Ajustes primero.');
       playlistState.isImportOpen.value = false;
       settingsState.isSettingsOpen.value = true;
@@ -37,7 +43,7 @@ export function ImportPlaylistModal() {
 
     setLoading(true);
     try {
-      await importYouTubePlaylist(playlistId, settingsState.apiKey.value);
+      await importYouTubePlaylist(playlistId);
       runCascadingLinkCheck();
       showToast('Playlist importada correctamente');
       handleClose();
@@ -124,9 +130,11 @@ export function ImportPlaylistModal() {
             >
               {loading ? 'Cargando...' : 'Importar'}
             </button>
-            {!settingsState.apiKey.value && (
+            {modeState.isDemo.value ? (
+              <p class="text-xs text-amber-300/80 mt-2">No disponible en versión demo.</p>
+            ) : !settingsState.hasServerKey.value ? (
               <p class="text-xs text-amber-300/80 mt-2">Requiere API key — configúrala en Ajustes para importar.</p>
-            )}
+            ) : null}
           </>
         ) : (
           <>

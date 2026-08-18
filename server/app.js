@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { authRoutes } from './routes/auth.js';
-import { backupRoutes } from './routes/backup.js';
+import { libraryRoutes } from './routes/library.js';
+import { youtubeRoutes } from './routes/youtube.js';
 import { ROOT } from './config.js';
 
 export const DIST = resolve(ROOT, 'dist');
@@ -40,7 +41,8 @@ export const createApp = () => {
 
   // API (la ruta de la SPA se registra después: las peticiones /api/* se resuelven aquí).
   app.route('/api/auth', authRoutes);
-  app.route('/api/backup', backupRoutes);
+  app.route('/api/library', libraryRoutes);
+  app.route('/api/youtube', youtubeRoutes);
 
   // SPA: sirve los archivos estáticos de dist/ y cae al index.html para rutas
   // de la app (/, /demo, etc.). El servidor es quien responde la web.

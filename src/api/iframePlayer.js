@@ -84,7 +84,9 @@ export const playTrack = (track) => {
     playerState.currentTime.value = 0;
     playerState.duration.value = 0;
 
-    player.loadVideoById(track.videoId);
+    // Si hay una copia reproducible (reemplazo), se reproduce esa; el ancla
+    // original (videoId) se conserva siempre para no romper la sync.
+    player.loadVideoById(track.playableVideoId || track.videoId);
 
     // Forzamos la reproducción por si la API falla en el autoplay implícito
     setTimeout(() => {

@@ -16,7 +16,8 @@
 /**
  * @typedef {Object} Track
  * @property {string} id - Identificador interno (por defecto, el YouTube Video ID)
- * @property {string} videoId - YouTube Video ID (e.g. "dQw4w9WgXcQ"); enlace al recurso
+ * @property {string} videoId - YouTube Video ID (e.g. "dQw4w9WgXcQ"); enlace al recurso (ancla inmutable para la sync)
+ * @property {string|null} [playableVideoId] - Video ID de una copia reproducible (reemplazo); se usa solo para reproducir y no altera el ancla
  * @property {string} title - Título de la canción (parseado; editable por el usuario)
  * @property {string} artist - Artista (parseado; editable por el usuario)
  * @property {string} thumbnailUrl - URL de la miniatura en YouTube (API data; purgable)

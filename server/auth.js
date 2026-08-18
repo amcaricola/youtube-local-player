@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { getOrCreateSecret } from './config.js';
+import { createSession, getSession } from './sessions.js';
 
 export const SESSION_DAYS = 30;
 
@@ -47,8 +48,23 @@ export const verifyToken = (token) => {
   }
 };
 
-/** Crea una sesión válida por SESSION_DAYS días. */
+/**
+ * Otorga una sesión: la registra en el servidor (grantedAt/expiresAt) y firma
+ * un token que referencia su sid. El token caduca junto con la sesión (30 días).
+ */
 export const createSessionToken = () => {
-  const exp = Date.now() + SESSION_DAYS * 86400000;
-  return { token: sign({ exp }), exp };
+  const session = createSession();
+  return { token: sign({ sid: session.sid, exp: session.expiresAt }), exp: session.expiresAt };
+};
+
+/**
+ * Verifica un token firmado Y que la sesión que referencia siga activa en el
+ * registro del servidor (no vencida ni revocada). Esto permite revocar una
+ * autorización de inmediato (cambio de contraseña, "Bloquear ahora") sin
+ * esperar a que expire.
+ */
+export const verifySession = (token) => {
+  const payload = verifyToken(token);
+  if (!payload || !payload.sid) return null;
+  return getSession(payload.sid) ? payload : null;
 };

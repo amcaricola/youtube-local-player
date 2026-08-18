@@ -1,19 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LocalStorageAdapter } from '../src/storage/LocalStorageAdapter.js';
-
-const createMemoryStorage = () => {
-  const values = new Map();
-  return {
-    getItem: key => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, String(value)),
-    removeItem: key => values.delete(key)
-  };
-};
+import { InMemoryStorageAdapter } from '../src/storage/InMemoryStorageAdapter.js';
+import { migrateTrack } from '../src/storage/trackModel.js';
 
 test('playlist backup restores saved metadata through the storage adapter', async () => {
-  globalThis.localStorage = createMemoryStorage();
-  const storage = new LocalStorageAdapter();
+  const storage = new InMemoryStorageAdapter();
   const playlist = {
     id: 'backup-playlist',
     title: 'Mi playlist',
@@ -34,8 +25,7 @@ test('playlist backup restores saved metadata through the storage adapter', asyn
 });
 
 test('invalid playlist backup is rejected without replacing valid data', async () => {
-  globalThis.localStorage = createMemoryStorage();
-  const storage = new LocalStorageAdapter();
+  const storage = new InMemoryStorageAdapter();
   const playlist = { id: 'valid-playlist', title: 'Valida', tracks: [] };
   await storage.savePlaylist(playlist);
 
@@ -43,9 +33,32 @@ test('invalid playlist backup is rejected without replacing valid data', async (
   assert.deepEqual(await storage.getPlaylists(), [playlist]);
 });
 
+test('backup round-trip preserves playableVideoId without changing the videoId anchor', async () => {
+  const storage = new InMemoryStorageAdapter();
+  await storage.savePlaylist({
+    id: 'pl1',
+    title: 'Mix',
+    tracks: [{
+      id: 'v1',
+      videoId: 'v1',
+      playableVideoId: 'v2',
+      title: 'Canción',
+      artist: 'Artista',
+      status: 'warning'
+    }]
+  });
+
+  const backup = JSON.parse(await storage.exportData());
+  const restored = new InMemoryStorageAdapter();
+  await restored.importData(JSON.stringify(backup));
+  const [pl] = await restored.getPlaylists();
+  assert.equal(pl.tracks[0].videoId, 'v1');
+  assert.equal(pl.tracks[0].playableVideoId, 'v2');
+  assert.equal(pl.tracks[0].status, 'unchecked');
+});
+
 test('export uses the minimal user-library schema (no YouTube API data)', async () => {
-  globalThis.localStorage = createMemoryStorage();
-  const storage = new LocalStorageAdapter();
+  const storage = new InMemoryStorageAdapter();
   await storage.savePlaylist({
     id: 'pl1',
     title: 'Mix',
@@ -65,14 +78,13 @@ test('export uses the minimal user-library schema (no YouTube API data)', async 
   const backup = JSON.parse(await storage.exportData());
   assert.equal(backup.version, 2);
   const track = backup.playlists[0].tracks[0];
-  assert.deepEqual(Object.keys(track).sort(), ['addedAt', 'artist', 'removedFromSource', 'title', 'videoId']);
+  assert.deepEqual(Object.keys(track).sort(), ['addedAt', 'artist', 'playableVideoId', 'removedFromSource', 'title', 'videoId']);
   assert.equal(track.publishedAt, undefined);
   assert.equal(track.thumbnailUrl, undefined);
 });
 
 test('import marks tracks unchecked so the sweep repopulates API metadata', async () => {
-  globalThis.localStorage = createMemoryStorage();
-  const storage = new LocalStorageAdapter();
+  const storage = new InMemoryStorageAdapter();
   await storage.importData(JSON.stringify({
     version: 2,
     playlists: [{
@@ -90,41 +102,28 @@ test('import marks tracks unchecked so the sweep repopulates API metadata', asyn
   assert.equal(track.publishedAt, null);
 });
 
-test('legacy tracks are migrated on load: originalTitle/channelTitle stripped', async () => {
-  globalThis.localStorage = createMemoryStorage();
-  const storage = new LocalStorageAdapter();
-  await storage.savePlaylist({
-    id: 'pl1',
-    title: 'Vieja',
-    tracks: [{
-      id: 'v1',
-      videoId: 'v1',
-      title: 'Canción',
-      artist: 'Artista',
-      originalTitle: 'Artista - Canción (Official Video)',
-      channelTitle: 'ArtistaVEVO',
-      status: 'healthy',
-      addedAt: 111
-    }]
+test('legacy tracks are migrated on load: originalTitle/channelTitle stripped', () => {
+  const [migrated, changed] = migrateTrack({
+    id: 'v1',
+    videoId: 'v1',
+    title: 'Canción',
+    artist: 'Artista',
+    originalTitle: 'Artista - Canción (Official Video)',
+    channelTitle: 'ArtistaVEVO',
+    status: 'healthy',
+    addedAt: 111
   });
 
-  const [migrated] = await storage.getPlaylists();
-  const track = migrated.tracks[0];
-  assert.equal(track.originalTitle, undefined);
-  assert.equal(track.channelTitle, undefined);
-  assert.equal(track.title, 'Canción');
-  assert.equal(track.artist, 'Artista');
-  assert.ok(track.metadataFetchedAt > 0);
-
-  // La migración también debe quedar persistida en el storage crudo
-  const raw = JSON.parse(globalThis.localStorage.getItem('yt_player_playlists'));
-  assert.equal(raw[0].tracks[0].originalTitle, undefined);
-  assert.equal(raw[0].tracks[0].channelTitle, undefined);
+  assert.equal(migrated.originalTitle, undefined);
+  assert.equal(migrated.channelTitle, undefined);
+  assert.equal(migrated.title, 'Canción');
+  assert.equal(migrated.artist, 'Artista');
+  assert.ok(migrated.metadataFetchedAt > 0);
+  assert.equal(changed, true);
 });
 
 test('clearAll wipes every playlist', async () => {
-  globalThis.localStorage = createMemoryStorage();
-  const storage = new LocalStorageAdapter();
+  const storage = new InMemoryStorageAdapter();
   await storage.savePlaylist({ id: 'pl1', title: 'Mix', tracks: [] });
   await storage.clearAll();
   assert.deepEqual(await storage.getPlaylists(), []);

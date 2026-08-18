@@ -44,7 +44,7 @@ test('in-memory adapter exporta e importa el esquema mínimo de respaldo', async
   const backup = JSON.parse(await storage.exportData());
   assert.equal(backup.version, 2);
   assert.deepEqual(Object.keys(backup.playlists[0].tracks[0]).sort(),
-    ['addedAt', 'artist', 'removedFromSource', 'title', 'videoId']);
+    ['addedAt', 'artist', 'playableVideoId', 'removedFromSource', 'title', 'videoId']);
 
   const restored = new InMemoryStorageAdapter();
   await restored.importData(JSON.stringify(backup));

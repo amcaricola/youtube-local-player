@@ -1,19 +1,23 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { playlistState, showToast } from '../../state/playlistState.js';
 import { syncPlaylistWithYouTube } from '../../state/playlistImports.js';
 import { deletePlaylist } from '../../state/playlistCrud.js';
-import { settingsState } from '../../state/settingsState.js';
+import { settingsState, refreshKeyStatus } from '../../state/settingsState.js';
 import { modeState } from '../../state/modeState.js';
 import { runCascadingLinkCheck, linkCheckerState } from '../../api/linkChecker.js';
 
 export function PlaylistSettingsModal() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  useEffect(() => {
+    if (playlistState.isPlaylistSettingsOpen.value) refreshKeyStatus();
+  }, [playlistState.isPlaylistSettingsOpen.value]);
+
   if (!playlistState.isPlaylistSettingsOpen.value) return null;
 
   const active = playlistState.activePlaylist.value;
   const inDemo = modeState.isDemo.value;
-  const needsKey = !inDemo && !settingsState.apiKey.value;
+  const needsKey = !inDemo && !settingsState.hasServerKey.value;
 
   const linkCheckDisabled = linkCheckerState.isRunning.value || inDemo || needsKey;
   const linkCheckReason = inDemo
@@ -38,12 +42,13 @@ export function PlaylistSettingsModal() {
 
   const handleSync = async () => {
     if (!active?.youtubePlaylistId) return;
-    if (!settingsState.apiKey.value) {
+    await refreshKeyStatus();
+    if (!settingsState.hasServerKey.value) {
       playlistState.syncNotice.value = 'Configura tu API Key en los Ajustes para sincronizar.';
       setTimeout(() => { playlistState.syncNotice.value = null; }, 6000);
       return;
     }
-    const result = await syncPlaylistWithYouTube(active, settingsState.apiKey.value);
+    const result = await syncPlaylistWithYouTube(active);
     playlistState.syncNotice.value = result
       ? `Sincronizado: +${result.added} nuevas, ${result.removed} eliminadas de YouTube`
       : 'Esta playlist no está vinculada a YouTube.';

@@ -1,22 +1,19 @@
 import { useState } from 'preact/hooks';
-import { settingsState } from '../../state/settingsState.js';
+import { settingsState, setDemoEnabled } from '../../state/settingsState.js';
 import { modeState } from '../../state/modeState.js';
 import { authState, setMasterPassword, lockNow } from '../../state/authState.js';
 import { showToast } from '../../state/playlistState.js';
-import { restoreFromServer } from '../../api/backupSync.js';
 
 export function UserSettingsModal() {
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
   const [pwMsg, setPwMsg] = useState(null);
-  const [backupMsg, setBackupMsg] = useState(null);
 
   const handleClose = () => {
     settingsState.isUserSettingsOpen.value = false;
     setPwNew('');
     setPwConfirm('');
     setPwMsg(null);
-    setBackupMsg(null);
   };
 
   const handleSetPassword = async () => {
@@ -56,17 +53,6 @@ export function UserSettingsModal() {
     showToast('Instancia bloqueada');
   };
 
-  const handleRestoreBackup = async () => {
-    setBackupMsg(null);
-    const ok = await restoreFromServer();
-    if (ok) {
-      setBackupMsg({ type: 'success', msg: 'Biblioteca importada desde el respaldo del servidor.' });
-      showToast('Backup recuperado desde el servidor');
-    } else {
-      setBackupMsg({ type: 'error', msg: 'No hay respaldo en el servidor o el servidor no está disponible.' });
-    }
-  };
-
   if (!settingsState.isUserSettingsOpen.value) return null;
 
   return (
@@ -91,10 +77,9 @@ export function UserSettingsModal() {
             <h3 class="text-sm font-semibold text-gray-300 mb-3">Acceso de Super Usuario</h3>
             {authState.authDisabled.value && (
               <div class="text-sm p-3 mb-3 rounded-lg bg-amber-500/15 border border-amber-400/30 text-amber-200">
-                Autenticación desactivada (<code class="text-amber-300">noAuthentication: true</code> en
-                <code class="text-amber-300"> server/.config.json</code>). Establece una nueva contraseña y luego
-                cambia <code class="text-amber-300">noAuthentication</code> a <code class="text-amber-300">false</code>
-                para volver a proteger la instancia.
+                Esta instancia <strong>no tiene contraseña</strong>, así que es <strong>pública</strong>:
+                cualquiera que conozca la dirección puede abrir tu biblioteca y ver tus playlists.
+                Establece una contraseña maestra abajo para protegerla.
               </div>
             )}
             {!authState.passwordRequired.value ? (
@@ -181,36 +166,13 @@ export function UserSettingsModal() {
                   <div class="text-xs text-gray-400">Si la desactivas, la ruta /demo deja de existir y solo se accede con contraseña</div>
                 </div>
                 <button
-                  onClick={() => settingsState.demoEnabled.value = !settingsState.demoEnabled.value}
+                  onClick={() => setDemoEnabled(!settingsState.demoEnabled.value)}
                   class={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${settingsState.demoEnabled.value ? 'bg-blue-600' : 'bg-gray-700'}`}
                   title={settingsState.demoEnabled.value ? 'Activado' : 'Desactivado'}
                 >
                   <span class={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${settingsState.demoEnabled.value ? 'left-[22px]' : 'left-0.5'}`}></span>
                 </button>
               </div>
-            </div>
-          )}
-
-          {!modeState.isDemo.value && (
-            <div class="border-t border-white/10 pt-4">
-              <h3 class="text-sm font-semibold text-gray-300 mb-3">Respaldo en servidor</h3>
-              <p class="text-xs text-gray-400 mb-3">
-                Importa ahora la biblioteca guardada en el servidor (otro dispositivo). El respaldo solo
-                contiene tus playlists: nunca viajan la API key ni la configuración del super usuario.
-              </p>
-              <button
-                onClick={handleRestoreBackup}
-                class="w-full py-2.5 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-400/30 text-emerald-200 rounded-lg text-sm font-medium transition-colors"
-              >
-                Recuperar backup de servidor
-              </button>
-              {backupMsg && (
-                <div class={`text-sm p-3 mt-3 rounded-lg ${
-                  backupMsg.type === 'error' ? 'bg-red-500/20 text-red-300' : 'bg-green-500/20 text-green-300'
-                }`}>
-                  {backupMsg.msg}
-                </div>
-              )}
             </div>
           )}
         </div>

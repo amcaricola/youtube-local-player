@@ -3,13 +3,13 @@ import { playerState } from '../state/playerState.js';
 import { playlistState } from '../state/playlistState.js';
 import { updateTrackMetadata } from '../state/playlistCrud.js';
 import { settingsState } from '../state/settingsState.js';
+import { fetchVideoStatusItems } from './youtubeApi.js';
 import {
   buildTrackUpdates,
   needsCheck,
   parseISO8601Duration
 } from './linkStatus.js';
 
-const BASE_URL = 'https://www.googleapis.com/youtube/v3';
 const BATCH_SIZE = 50;
 const AUTO_INTERVAL_MS = 60 * 1000;
 const MANUAL_INTERVAL_MS = 5 * 1000;
@@ -24,25 +24,22 @@ let shouldStop = false;
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Consulta el estado y la metadata de un lote de videos.
- * Un solo request por lote (status + snippet + contentDetails cuestan lo mismo),
- * así cada verificación también renueva la metadata de la API (regla de 30 días).
- * Videos que ya no existen en YouTube no aparecen en la respuesta => se marcan como rotos.
+ * Consulta el estado y la metadata de un lote de videos a través del proxy del
+ * servidor (que usa su propia API key). Un solo request por lote (status +
+ * snippet + contentDetails cuestan lo mismo), así cada verificación también
+ * renueva la metadata de la API (regla de 30 días). Videos que ya no existen
+ * en YouTube no aparecen en la respuesta => se marcan como rotos.
  * @param {string[]} videoIds
- * @param {string} apiKey
+ * @returns {Promise<Object<string, {status: string, message: string|null, snippet: object|null, durationSeconds: number|null}>>}
  */
-const fetchVideoStatus = async (videoIds, apiKey) => {
-  const res = await fetch(`${BASE_URL}/videos?part=snippet,status,contentDetails&id=${videoIds.join(',')}&key=${apiKey}`);
-  if (!res.ok) {
-    throw new Error((await res.json()).error?.message || 'Error al verificar videos');
-  }
-  const data = await res.json();
+const fetchVideoStatus = async (videoIds) => {
+  const items = await fetchVideoStatusItems(videoIds);
 
   const statuses = {};
   for (const id of videoIds) {
     statuses[id] = { status: 'broken', message: 'Video eliminado o no disponible' };
   }
-  for (const item of data.items || []) {
+  for (const item of items) {
     const st = item.status;
     let status = 'healthy';
     let message = null;
@@ -80,8 +77,6 @@ const fetchVideoStatus = async (videoIds, apiKey) => {
 export const runCascadingLinkCheck = async (manual = false) => {
   if (isRunning) return;
   if (!manual && !settingsState.autoCheckLinks.value) return;
-  const apiKey = settingsState.apiKey.value;
-  if (!apiKey) return;
 
   const interval = manual ? MANUAL_INTERVAL_MS : AUTO_INTERVAL_MS;
   isRunning = true;
@@ -97,15 +92,21 @@ export const runCascadingLinkCheck = async (manual = false) => {
         if (shouldStop) break;
         const chunk = pending.slice(i, i + BATCH_SIZE);
         try {
-          const results = await fetchVideoStatus(chunk.map(t => t.videoId), apiKey);
-          for (const [videoId, info] of Object.entries(results)) {
-            const track = chunk.find(t => t.videoId === videoId);
-            if (track) {
+          // Se verifica el video que REALMENTE se reproduce (playableVideoId ||
+          // videoId): si el track tiene una copia reproducible, su salud es la de
+          // la copia, no la del ancla original (que puede tener el embed bloqueado
+          // y volvería a marcarlo como aviso tras cada reparación).
+          const results = await fetchVideoStatus(chunk.map(t => t.playableVideoId || t.videoId));
+          for (const track of chunk) {
+            const queriedId = track.playableVideoId || track.videoId;
+            const info = results[queriedId];
+            if (info) {
               await updateTrackMetadata(playlist.id, track.id, buildTrackUpdates(track, info));
             }
           }
         } catch (error) {
-          // Quota agotada, red caída, etc. Detener la cascada para no saturar.
+          // Sin key en el servidor, cuota agotada, red caída, etc.
+          // Detener la cascada para no saturar.
           console.error("[LinkChecker] Error en lote:", error);
           shouldStop = true;
           break;
@@ -124,17 +125,20 @@ export const stopLinkCheck = () => {
 };
 
 /**
- * Consulta la información completa de un único video (estado + metadata).
- * Reutiliza el mismo request que el checker para no duplicar cuota.
- * Usado al agregar una canción manualmente con API Key.
+ * Consulta la información completa de un único video (estado + metadata) vía
+ * el proxy del servidor. Usado al agregar una canción manualmente.
  * @param {string} videoId
- * @param {string} apiKey
  * @returns {Promise<{status: string, message: string|null, snippet: object, durationSeconds: number|null}|null>}
  */
-export const fetchVideoInfo = async (videoId, apiKey) => {
-  if (!apiKey || !videoId) return null;
-  const results = await fetchVideoStatus([videoId], apiKey);
-  return results[videoId] || null;
+export const fetchVideoInfo = async (videoId) => {
+  if (!videoId) return null;
+  try {
+    const results = await fetchVideoStatus([videoId]);
+    return results[videoId] || null;
+  } catch {
+    // Sin key en el servidor o error de red: el alta manual sigue sin metadata.
+    return null;
+  }
 };
 
 /**
@@ -143,14 +147,21 @@ export const fetchVideoInfo = async (videoId, apiKey) => {
  * @param {import('../types/player.js').Track} track
  */
 export const checkTrackNow = async (playlistId, track) => {
-  const apiKey = settingsState.apiKey.value;
-  if (!apiKey || !track?.videoId) return;
-  const results = await fetchVideoStatus([track.videoId], apiKey);
-  const info = results[track.videoId];
-  if (info) {
-    await updateTrackMetadata(playlistId, track.id, buildTrackUpdates(track, info));
-  }
-  if (playerState.currentTrack.value?.id === track.id) {
-    playerState.currentTrack.value = { ...playerState.currentTrack.value, status: info?.status || 'unchecked', statusMessage: info?.message || null };
+  if (!track?.videoId) return;
+  try {
+    // Igual que el barrido: se verifica la copia reproducible (si existe), no el
+    // ancla original — reparar un track con embed bloqueado no debe volver a
+    // marcarlo como aviso en el acto.
+    const queriedId = track.playableVideoId || track.videoId;
+    const results = await fetchVideoStatus([queriedId]);
+    const info = results[queriedId];
+    if (info) {
+      await updateTrackMetadata(playlistId, track.id, buildTrackUpdates(track, info));
+    }
+    if (playerState.currentTrack.value?.id === track.id) {
+      playerState.currentTrack.value = { ...playerState.currentTrack.value, status: info?.status || 'unchecked', statusMessage: info?.message || null };
+    }
+  } catch (error) {
+    console.error('[LinkChecker] No se pudo verificar el track:', error);
   }
 };

@@ -1,32 +1,22 @@
 import { signal } from '@preact/signals';
 import { modeState } from './modeState.js';
+import { settingsState } from './settingsState.js';
 
-const SESSION_KEY = 'yt_session_expires_at';
-const PASSWORD_KEY = 'yt_master_password';
 const TOKEN_KEY = 'yt_session_token';
 export const SESSION_DAYS = 30;
 
 /**
- * El servidor es la fuente de verdad del acceso: al arrancar SIEMPRE se
- * consulta /api/auth/status (salvo en la ruta /demo, que queda libre). El
- * servidor confirma si hay contraseña y si la autenticación está activa.
+ * El servidor es la única autoridad del acceso (el modo local ya no existe):
+ * al arrancar SIEMPRE se consulta /api/auth/status (salvo en la ruta /demo,
+ * que queda libre pero igual consulta el status público para conocer si el
+ * super usuario tiene la demo habilitada).
  *
  * - Sin contraseña  -> la app arranca libre (bienvenida o biblioteca).
  * - Con contraseña  -> LockScreen siempre, salvo sesión válida (token).
  * - noAuthentication -> modo recuperación: sin contraseña + aviso en la UI.
- *
- * En local (sin servidor) se conserva el comportamiento legacy de localStorage.
+ * - Servidor inalcanzable -> serverUnreachable (AuthGate muestra el error);
+ *   la app no puede funcionar sin su fuente de verdad.
  */
-
-const readStoredPassword = () => {
-  if (typeof localStorage === 'undefined') return '';
-  return localStorage.getItem(PASSWORD_KEY) || '';
-};
-
-const readSessionExpiry = () => {
-  if (typeof localStorage === 'undefined') return 0;
-  return Number(localStorage.getItem(SESSION_KEY) || 0);
-};
 
 const readToken = () => {
   if (typeof localStorage === 'undefined') return '';
@@ -47,15 +37,10 @@ const tokenExpiry = (token) => {
   }
 };
 
-/**
- * Sesión válida si hay token firmado del servidor (30 días) o una sesión
- * legacy de localStorage sin vencer. Cualquiera de las dos abre la sesión.
- */
+/** Sesión válida si hay token firmado del servidor (30 días). */
 export const hasValidSession = () => {
   const exp = tokenExpiry(readToken());
-  if (exp > 0 && Date.now() < exp) return true;
-  const legacyExp = readSessionExpiry();
-  return legacyExp > 0 && Date.now() < legacyExp;
+  return exp > 0 && Date.now() < exp;
 };
 
 // Llamada a la API del servidor con el token de sesión en el header.
@@ -74,26 +59,33 @@ const api = async (path, options = {}) => {
 const demoAtLoad = modeState.isDemo.value;
 
 export const authState = {
-  // ready = ya se conoce passwordRequired/isLocked. En la raíz hay que
-  // consultar /api/auth/status antes; la demo arranca lista.
+  // ready = ya se conoce passwordRequired/isLocked (o si el servidor falló).
   ready: signal(demoAtLoad),
-  // serverManaged = el servidor respondió /api/auth/status (es la autoridad).
-  serverManaged: signal(false),
+  // serverUnreachable = /api/auth/status falló al arrancar: la app no puede
+  // funcionar sin el servidor (modo local eliminado).
+  serverUnreachable: signal(false),
   // authDisabled = noAuthentication=true en el servidor (modo recuperación).
   authDisabled: signal(false),
-  passwordRequired: signal(demoAtLoad ? false : !!readStoredPassword()),
-  isLocked: signal(demoAtLoad ? false : (readStoredPassword() ? !hasValidSession() : false))
+  passwordRequired: signal(demoAtLoad ? false : false),
+  isLocked: signal(demoAtLoad ? false : false)
 };
 
-// Las operaciones de acceso usan el servidor si el modo es 'servidor' o si el
-// servidor ya respondió (serverManaged), aunque el app_mode siga en 'none'.
-const authUsesServer = () => modeState.isServer.value || authState.serverManaged.value;
+const applyStatus = (data) => {
+  authState.authDisabled.value = !!(data.noAuthentication);
+  // Con la autenticación desactivada no se pide contraseña (modo recuperación).
+  const passwordSet = data.passwordSet && !data.noAuthentication;
+  authState.passwordRequired.value = passwordSet;
+  authState.isLocked.value = passwordSet && !hasValidSession();
+  if (typeof data.demoEnabled !== 'undefined') {
+    settingsState.demoEnabled.value = data.demoEnabled !== false;
+  }
+};
 
 /**
  * Resuelve el estado de autenticación inicial consultando SIEMPRE al servidor
- * (en la raíz), sin importar el app_mode del navegador. Si el servidor está
- * inalcanzable se cae al comportamiento legacy de localStorage.
- * La demo queda libre (no consulta).
+ * (en la raíz). Si el servidor está inalcanzable la app no puede funcionar:
+ * serverUnreachable activa la pantalla de error en AuthGate.
+ * La demo queda libre, pero consulta el status público para conocer demoEnabled.
  */
 let lastAuthMode = null;
 export const initAuth = async () => {
@@ -103,30 +95,36 @@ export const initAuth = async () => {
   lastAuthMode = modeKey;
 
   if (isDemo) {
-    authState.serverManaged.value = false;
+    authState.serverUnreachable.value = false;
     authState.authDisabled.value = false;
     authState.passwordRequired.value = false;
     authState.isLocked.value = false;
     authState.ready.value = true;
+    // El servidor decide si la ruta /demo existe (demoEnabled). /api/auth/status
+    // es público: en la demo se consulta solo para eso, sin bloquear nunca.
+    try {
+      const { ok, data } = await api('/api/auth/status');
+      if (ok && typeof data.demoEnabled !== 'undefined') {
+        settingsState.demoEnabled.value = data.demoEnabled !== false;
+      }
+    } catch {
+      // Servidor inalcanzable: la demo sigue libre con el valor por defecto.
+    }
     return;
   }
 
   authState.ready.value = false;
   try {
     const { ok, data } = await api('/api/auth/status');
-    authState.serverManaged.value = ok;
-    authState.authDisabled.value = !!(ok && data.noAuthentication);
-    // Con la autenticación desactivada no se pide contraseña (modo recuperación).
-    const passwordSet = ok && data.passwordSet && !data.noAuthentication;
-    authState.passwordRequired.value = passwordSet;
-    authState.isLocked.value = passwordSet && !hasValidSession();
+    if (!ok) {
+      authState.serverUnreachable.value = true;
+      authState.ready.value = true;
+      return;
+    }
+    authState.serverUnreachable.value = false;
+    applyStatus(data);
   } catch {
-    // Servidor inalcanzable: fallback legacy con la contraseña de localStorage.
-    authState.serverManaged.value = false;
-    authState.authDisabled.value = false;
-    const pw = readStoredPassword();
-    authState.passwordRequired.value = !!pw;
-    authState.isLocked.value = !!pw && !hasValidSession();
+    authState.serverUnreachable.value = true;
   }
   authState.ready.value = true;
 };
@@ -138,27 +136,24 @@ export const initAuth = async () => {
  * @returns {Promise<boolean>}
  */
 export const setMasterPassword = async (password) => {
-  if (authUsesServer()) {
-    const { ok } = await api('/api/auth/password', {
-      method: 'POST',
-      body: JSON.stringify({ password: password || '' })
-    });
-    if (!ok) return false;
-    authState.passwordRequired.value = !!password;
-    authState.isLocked.value = false;
-    return true;
-  }
-  const pw = password || '';
-  if (typeof localStorage !== 'undefined') {
-    if (pw) {
-      localStorage.setItem(PASSWORD_KEY, pw);
-      localStorage.setItem(SESSION_KEY, String(Date.now() + SESSION_DAYS * 86400000));
-    } else {
-      localStorage.removeItem(PASSWORD_KEY);
-      localStorage.removeItem(SESSION_KEY);
+  const { ok, data } = await api('/api/auth/password', {
+    method: 'POST',
+    body: JSON.stringify({ password: password || '' })
+  });
+  if (!ok) return false;
+  if (password) {
+    // Se reactiva la autenticación (el servidor limpia noAuthentication) y
+    // se abre sesión con el token devuelto (para no bloquearse al recargar).
+    if (data.token && typeof localStorage !== 'undefined') {
+      localStorage.setItem(TOKEN_KEY, data.token);
     }
+    authState.authDisabled.value = false;
+    authState.passwordRequired.value = true;
+  } else {
+    // Eliminar la contraseña deja la instancia abierta (noAuthentication=true).
+    authState.authDisabled.value = true;
+    authState.passwordRequired.value = false;
   }
-  authState.passwordRequired.value = !!pw;
   authState.isLocked.value = false;
   return true;
 };
@@ -169,44 +164,59 @@ export const setMasterPassword = async (password) => {
  * @returns {Promise<boolean>} true si la contraseña es correcta
  */
 export const unlockWithPassword = async (password) => {
-  if (authUsesServer()) {
-    try {
-      const { ok, data } = await api('/api/auth/unlock', {
-        method: 'POST',
-        body: JSON.stringify({ password })
-      });
-      if (!ok || !data.token) return false;
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(TOKEN_KEY, data.token);
-      }
-      authState.isLocked.value = false;
-      return true;
-    } catch {
-      return false;
+  try {
+    const { ok, data } = await api('/api/auth/unlock', {
+      method: 'POST',
+      body: JSON.stringify({ password })
+    });
+    if (!ok || !data.token) return false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TOKEN_KEY, data.token);
     }
+    if (typeof data.demoEnabled !== 'undefined') {
+      settingsState.demoEnabled.value = data.demoEnabled !== false;
+    }
+    authState.isLocked.value = false;
+    return true;
+  } catch {
+    return false;
   }
-  const pw = readStoredPassword();
-  if (!pw) return true;
-  if (password !== pw) return false;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(SESSION_KEY, String(Date.now() + SESSION_DAYS * 86400000));
-  }
-  authState.isLocked.value = false;
-  return true;
 };
 
-/** Bloquea la instancia de inmediato (descarta la sesión actual). */
-export const lockNow = () => {
-  if (authUsesServer()) {
-    api('/api/auth/lock', { method: 'POST' }).catch(() => {});
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(TOKEN_KEY);
+/**
+ * Re-verifica la sesión contra el servidor. El cliente manda su token y el
+ * servidor confirma con OK si la sesión sigue activa en su registro. Sirve
+ * para bloquear conexiones ya abiertas si la configuración cambia (p.ej. el
+ * super usuario edita .config.json para exigir contraseña) o si la sesión fue
+ * revocada (cambio de contraseña, "Bloquear ahora"). También refresca
+ * demoEnabled (el super usuario puede deshabilitar la demo en caliente).
+ * En la demo no hace nada.
+ */
+export const reverify = async () => {
+  if (modeState.isDemo.value) return;
+  try {
+    const [statusRes, verifyRes] = await Promise.all([
+      api('/api/auth/status'),
+      api('/api/auth/verify')
+    ]);
+    if (statusRes.ok) {
+      authState.serverUnreachable.value = false;
+      applyStatus(statusRes.data);
     }
-    authState.isLocked.value = true;
-    return;
+    const sessionValid = verifyRes.ok && verifyRes.data.ok === true;
+    authState.isLocked.value = authState.passwordRequired.value && !sessionValid;
+  } catch {
+    // Servidor inalcanzable: conservar el estado actual (no bloquear por red).
   }
+};
+
+/**
+ * Bloquea la instancia de inmediato (descarta la sesión actual).
+ */
+export const lockNow = () => {
+  api('/api/auth/lock', { method: 'POST' }).catch(() => {});
   if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(TOKEN_KEY);
   }
   authState.isLocked.value = true;
 };

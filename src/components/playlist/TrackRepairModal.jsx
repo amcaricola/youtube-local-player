@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { playlistState } from '../../state/playlistState.js';
 import { updateTrackMetadata } from '../../state/playlistCrud.js';
-import { settingsState } from '../../state/settingsState.js';
 import { searchVideos } from '../../api/youtubeApi.js';
 import { checkTrackNow } from '../../api/linkChecker.js';
 
@@ -20,15 +19,10 @@ export function TrackRepairModal() {
   }, [playlistState.activePlaylist.value, track]);
 
   const doSearch = async (t) => {
-    const apiKey = settingsState.apiKey.value;
-    if (!apiKey) {
-      setError('Configura tu API Key en los Ajustes para buscar reemplazos.');
-      return;
-    }
     setSearching(true);
     setError('');
     try {
-      const items = await searchVideos(`${t.artist} ${t.title}`, apiKey);
+      const items = await searchVideos(`${t.artist} ${t.title}`);
       setResults(items);
     } catch (e) {
       setError(e.message);
@@ -39,11 +33,15 @@ export function TrackRepairModal() {
   };
 
   useEffect(() => {
-    if (track) {
-      setResults([]);
-      setError('');
-      doSearch(track);
-    }
+    // El modal no se desmonta entre aperturas (retorna null pero el
+    // componente persiste): hay que reiniciar TODO el estado transitorio,
+    // incluido `saving`, o la segunda apertura queda con los botones
+    // bloqueados en "Guardando..." sin poder salir.
+    setSaving(false);
+    setSearching(false);
+    setResults([]);
+    setError('');
+    if (track) doSearch(track);
   }, [track]);
 
   if (!track) return null;
@@ -58,11 +56,16 @@ export function TrackRepairModal() {
     setSaving(true);
     setError('');
     try {
-      // Solo se conserva el nuevo enlace: título y artista del usuario no se tocan,
-      // y la metadata de la API (fecha, miniatura, duración) la repuebla checkTrackNow.
+      // Si el video original fue eliminado (roto), el reemplazo pasa a ser el
+      // videoId principal (el ancla se mueve). En cualquier otro caso (embed
+      // bloqueado, privado, etc.) se guarda como copia reproducible
+      // (playableVideoId) y el videoId original se conserva: la sync matchea por
+      // el ancla, así no se duplica el tema ni se marca como "fuera de playlist".
+      const isRemoved = track.status === 'broken';
       const applied = {
         ...track,
-        videoId: item.videoId,
+        videoId: isRemoved ? item.videoId : track.videoId,
+        playableVideoId: isRemoved ? null : item.videoId,
         thumbnailUrl: item.thumbnailUrl || track.thumbnailUrl,
         publishedAt: null,
         durationSeconds: null,
@@ -74,6 +77,7 @@ export function TrackRepairModal() {
       };
       await updateTrackMetadata(active.id, track.id, applied);
       await checkTrackNow(active.id, applied);
+      setSaving(false);
       playlistState.repairTrack.value = null;
     } catch (e) {
       setError('No se pudo guardar el reemplazo: ' + e.message);
@@ -102,6 +106,16 @@ export function TrackRepairModal() {
         {track.statusMessage && (
           <div class="text-xs p-3 rounded-lg bg-red-500/15 text-red-300 mb-4">
             Motivo: {track.statusMessage}
+          </div>
+        )}
+
+        {track.status === 'broken' ? (
+          <div class="text-xs p-3 rounded-lg bg-blue-500/10 text-blue-300 mb-4">
+            El video original fue eliminado: el reemplazo pasará a ser el enlace principal del tema.
+          </div>
+        ) : (
+          <div class="text-xs p-3 rounded-lg bg-cyan-500/10 text-cyan-300 mb-4">
+            Se guardará como copia reproducible. El enlace original se conserva y no se duplicará al sincronizar.
           </div>
         )}
 
@@ -146,7 +160,7 @@ export function TrackRepairModal() {
                     </span>
                   ) : (
                     <span class="shrink-0 px-2 py-1 rounded-md text-[10px] font-semibold border transition-colors bg-blue-600/20 text-blue-300 border-blue-500/40">
-                      {item.videoId === track.videoId ? 'Actual' : saving ? 'Guardando...' : 'Usar'}
+                      {item.videoId === (track.playableVideoId || track.videoId) ? 'Actual' : saving ? 'Guardando...' : track.status === 'broken' ? 'Reemplazar' : 'Usar como copia'}
                     </span>
                   )}
                 </button>

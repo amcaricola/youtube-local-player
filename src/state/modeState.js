@@ -6,8 +6,9 @@ const MODE_KEY = 'app_mode';
 
 /**
  * El modo demo se activa por RUTA (`/demo`) y solo si el super usuario no lo
- * deshabilitó en Ajustes (`yt_demo_enabled`). Nunca se persiste en
- * localStorage, así al refrescar vuelve siempre al contenido original.
+ * deshabilitó en el servidor (`demoEnabled` en server/.config.json). Nunca se
+ * persiste en localStorage, así al refrescar vuelve siempre al contenido
+ * original.
  * - 'none'     : sin decisión todavía → se muestra la pantalla de bienvenida.
  * - 'demo'     : ruta `/demo`, datos mock en memoria (no usa localStorage).
  * - 'servidor' : instancia personal / API Key del usuario (versión completa).
@@ -24,6 +25,16 @@ export const modeState = {
   isDemo: computed(() => modeState.mode.value === 'demo'),
   isServer: computed(() => modeState.mode.value === 'servidor')
 };
+
+// demoEnabled lo decide el servidor y llega de forma asíncrona (initAuth /
+// reverify / unlock): cuando cambia, recomputa el modo si estamos en /demo
+// (el super usuario puede habilitar/deshabilitar la demo en caliente).
+effect(() => {
+  const routeDemo = isDemoRoute();
+  const enabled = settingsState.demoEnabled.value;
+  const target = routeDemo && enabled ? 'demo' : readSavedMode();
+  if (modeState.mode.value !== target) modeState.mode.value = target;
+});
 
 effect(() => {
   if (typeof localStorage === 'undefined') return;

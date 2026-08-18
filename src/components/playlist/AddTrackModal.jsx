@@ -39,9 +39,9 @@ export function AddTrackModal() {
       let status = 'unchecked';
       let statusMessage = null;
 
-      if (settingsState.apiKey.value) {
+      if (settingsState.hasServerKey.value) {
         try {
-          const info = await fetchVideoInfo(videoId, settingsState.apiKey.value);
+          const info = await fetchVideoInfo(videoId);
           if (info && info.snippet) {
             const parsed = parseTrackMetadata(info.snippet.title, info.snippet.channelTitle);
             title = title || parsed.title || videoId;
@@ -122,7 +122,7 @@ export function AddTrackModal() {
               type="text"
               value={name}
               onInput={(e) => setName(e.target.value)}
-              placeholder={settingsState.apiKey.value ? 'Automático con la API key' : 'Título de la canción'}
+              placeholder={settingsState.hasServerKey.value ? 'Automático con la API key del servidor' : 'Título de la canción'}
               class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
@@ -132,18 +132,18 @@ export function AddTrackModal() {
               type="text"
               value={artist}
               onInput={(e) => setArtist(e.target.value)}
-              placeholder={settingsState.apiKey.value ? 'Automático con la API key' : 'Nombre del artista'}
+              placeholder={settingsState.hasServerKey.value ? 'Automático con la API key del servidor' : 'Nombre del artista'}
               class="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
 
-          {settingsState.apiKey.value ? (
+          {settingsState.hasServerKey.value ? (
             <p class="text-xs text-gray-400">
-              Con tu API key, solo el link es suficiente: nombre y artista se completan automáticamente (puedes corregirlos después).
+              Con la API key del servidor, solo el link es suficiente: nombre y artista se completan automáticamente (puedes corregirlos después).
             </p>
           ) : (
             <p class="text-xs text-amber-300/80">
-              Sin API key, escribe nombre y artista manualmente. El link y la duración se podrán completar al configurar tu API key.
+              Sin API key en el servidor, escribe nombre y artista manualmente. El link y la duración se podrán completar al configurar tu API key en Ajustes.
             </p>
           )}
 

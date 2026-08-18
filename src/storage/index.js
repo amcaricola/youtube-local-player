@@ -1,16 +1,21 @@
 import { signal, effect } from '@preact/signals';
-import { LocalStorageAdapter } from './LocalStorageAdapter.js';
 import { InMemoryStorageAdapter } from './InMemoryStorageAdapter.js';
+import { ServerStorageAdapter } from './ServerStorageAdapter.js';
 import { modeState } from '../state/modeState.js';
 
-const localStorageAdapter = new LocalStorageAdapter();
+// El modo local ya no existe: la biblioteca siempre vive en el servidor
+// (/api/library). Solo la demo (ruta /demo) usa memoria (nada se persiste).
 const memoryAdapter = new InMemoryStorageAdapter();
+const serverAdapter = new ServerStorageAdapter();
 
-// La demo (ruta /demo) usa un adaptador de memoria: nada se persiste.
-const activeStorage = signal(localStorageAdapter);
+const activeStorage = signal(serverAdapter);
 
 effect(() => {
-  activeStorage.value = modeState.isDemo.value ? memoryAdapter : localStorageAdapter;
+  if (modeState.isDemo.value) {
+    activeStorage.value = memoryAdapter;
+  } else {
+    activeStorage.value = serverAdapter;
+  }
 });
 
 // Fachada: delega cada método al adaptador activo.

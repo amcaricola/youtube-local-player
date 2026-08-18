@@ -2,7 +2,6 @@ import { fetchPlaylistData } from '../api/youtubeApi.js';
 import { parseTrackMetadata } from '../api/metadataParser.js';
 import storage from '../storage/index.js';
 import { playlistState } from './playlistState.js';
-import { settingsState } from './settingsState.js';
 import { modeState } from './modeState.js';
 import { DEMO_PLAYLIST_ID } from './playlistDemo.js';
 
@@ -59,15 +58,15 @@ const mapRawItemsToTracks = (rawItems) => rawItems
 
 /**
  * Importa y parsea una playlist desde YouTube a la base de datos local.
+ * La API key la usa el servidor (F3), nunca el navegador.
  * @param {string} playlistId
- * @param {string} apiKey
  */
-export const importYouTubePlaylist = async (playlistId, apiKey) => {
+export const importYouTubePlaylist = async (playlistId) => {
   playlistState.isLoading.value = true;
   playlistState.error.value = null;
 
   try {
-    const data = await fetchPlaylistData(playlistId, apiKey);
+    const data = await fetchPlaylistData(playlistId);
 
     const newPlaylist = {
       id: `pl_${Date.now()}`,
@@ -100,15 +99,14 @@ export const importYouTubePlaylist = async (playlistId, apiKey) => {
  *   YouTube (se conservan en local con su metadata para no perder nada).
  * - Nunca pisa los metadatos editados por el usuario.
  * @param {import('../types/player.js').Playlist} playlist
- * @param {string} apiKey
  * @returns {Promise<{added: number, removed: number}|null>}
  */
-export const syncPlaylistWithYouTube = async (playlist, apiKey) => {
+export const syncPlaylistWithYouTube = async (playlist) => {
   if (!playlist?.youtubePlaylistId) return null;
   playlistState.isSyncing.value = true;
 
   try {
-    const data = await fetchPlaylistData(playlist.youtubePlaylistId, apiKey);
+    const data = await fetchPlaylistData(playlist.youtubePlaylistId);
     const remoteTracks = mapRawItemsToTracks(data.rawItems);
     const remoteIds = new Set(remoteTracks.map(t => t.videoId));
     const localIds = new Set(playlist.tracks.map(t => t.videoId));
@@ -150,14 +148,11 @@ export const syncPlaylistWithYouTube = async (playlist, apiKey) => {
  * @returns {Promise<Array<{title: string, added: number, removed: number}>>}
  */
 export const syncAllPlaylists = async () => {
-  const apiKey = settingsState.apiKey.value;
-  if (!apiKey) return [];
-
   const results = [];
   for (const playlist of [...playlistState.playlists.value]) {
     if (!playlist.youtubePlaylistId) continue;
     try {
-      const result = await syncPlaylistWithYouTube(playlist, apiKey);
+      const result = await syncPlaylistWithYouTube(playlist);
       if (result) {
         results.push({ title: playlist.title, ...result });
       }

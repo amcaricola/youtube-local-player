@@ -19,6 +19,9 @@ const {
   RECOVERY_WINDOW_MS
 } = await import('../src/api/linkStatus.js');
 
+const { playlistState } = await import('../src/state/playlistState.js');
+const { checkTrackNow } = await import('../src/api/linkChecker.js');
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const baseTrack = {
@@ -151,4 +154,45 @@ test('un track healthy recién verificado no entra al barrido', () => {
 
 test('un track nunca verificado (sin lastCheckedAt) siempre entra al barrido', () => {
   assert.equal(needsCheck({ ...baseTrack, lastCheckedAt: null }), true);
+});
+
+test('checkTrackNow verifica la copia reproducible, no el ancla con embed bloqueado', async () => {
+  const anchorId = 'anchor-embed-blocked';
+  const copyId = 'copy-ok';
+  const track = {
+    id: 't1',
+    videoId: anchorId,
+    playableVideoId: copyId,
+    title: 'Mi Canción',
+    artist: 'Mi Artista',
+    status: 'unchecked',
+    statusMessage: null,
+    brokenAt: null,
+    metadataFetchedAt: 0,
+    addedAt: Date.now(),
+    lastCheckedAt: null
+  };
+  playlistState.playlists.value = [{ id: 'pl1', title: 'Mix', tracks: [track] }];
+  playlistState.activePlaylist.value = playlistState.playlists.value[0];
+
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/api/youtube/videos') && u.includes(copyId)) {
+      return { ok: true, status: 200, json: async () => ({
+        ok: true,
+        items: [{ id: copyId, status: { embeddable: true, privacyStatus: 'public' }, snippet: { publishedAt: '2020-01-01T00:00:00Z', thumbnails: { default: { url: 'u' } } }, contentDetails: { duration: 'PT3M' } }]
+      }) };
+    }
+    if (u.includes('/api/library')) {
+      return { ok: true, status: 200, json: async () => ({ version: 2, playlists: [] }) };
+    }
+    return { ok: false, status: 500, json: async () => ({}) };
+  };
+
+  await checkTrackNow('pl1', track);
+
+  const updated = playlistState.activePlaylist.value.tracks[0];
+  assert.equal(updated.status, 'healthy');
+  assert.equal(updated.videoId, anchorId); // el ancla se conserva
+  assert.equal(updated.playableVideoId, copyId); // la copia sigue activa
 });

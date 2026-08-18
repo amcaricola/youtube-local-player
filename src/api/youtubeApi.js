@@ -1,29 +1,100 @@
-import { settingsState } from '../state/settingsState.js';
+import { isDemoRoute } from '../state/demoRoute.js';
 
-const BASE_URL = 'https://www.googleapis.com/youtube/v3';
+// F3: toda la interacción con la YouTube Data API v3 pasa por el proxy del
+// servidor (/api/youtube). El navegador nunca conoce ni persiste la API key:
+// vive en server/.config.json y el servidor controla su uso. En modo demo la
+// puerta queda bloqueada (la demo nunca debe tocar la key del super usuario).
 
-/**
- * Valida que la API Key de YouTube sea correcta haciendo una petición mínima.
- * @param {string} apiKey 
- * @returns {Promise<boolean>}
- */
-export const checkApiKey = async (apiKey) => {
-  try {
-    const res = await fetch(`${BASE_URL}/videos?part=snippet&id=dQw4w9WgXcQ&key=${apiKey}`);
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error?.message || 'API Key Error');
-    }
-    return true;
-  } catch (error) {
-    console.error("YouTube API Error:", error);
-    return false;
-  }
+const API_BASE = '/api/youtube';
+
+const guardDemo = () => {
+  if (isDemoRoute()) throw new Error('No disponible en versión demo');
+};
+
+const headers = () => {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('yt_session_token') : '';
+  return token ? { Authorization: token } : {};
+};
+
+const handleRes = async (res) => {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || `Error ${res.status}`);
+  return data;
 };
 
 /**
- * Extrae el ID de la playlist desde una URL de YouTube
- * @param {string} url 
+ * ¿El servidor tiene una API key configurada? (nunca revela la key en sí).
+ * @returns {Promise<boolean>}
+ */
+export const getKeyStatus = async () => {
+  guardDemo();
+  const data = await handleRes(await fetch(`${API_BASE}/status`, { headers: headers() }));
+  return !!data.hasKey;
+};
+
+/**
+ * Valida y guarda la API key en la config del servidor. La key viaja una vez
+ * al servidor y NO se persiste en el navegador.
+ * @param {string} apiKey
+ */
+export const saveKeyToServer = async (apiKey) => {
+  guardDemo();
+  await handleRes(await fetch(`${API_BASE}/key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers() },
+    body: JSON.stringify({ apiKey })
+  }));
+};
+
+/** Elimina la API key del servidor. */
+export const removeServerKey = async () => {
+  guardDemo();
+  await handleRes(await fetch(`${API_BASE}/key`, { method: 'DELETE', headers: headers() }));
+};
+
+/**
+ * Consulta el estado y la metadata de un lote de videos (el servidor usa su
+ * propia key). Los videos que ya no existen no aparecen en `items`.
+ * @param {string[]} videoIds
+ * @returns {Promise<Array<{id: string, snippet: object, status: object, contentDetails: object}>>}
+ */
+export const fetchVideoStatusItems = async (videoIds) => {
+  guardDemo();
+  const data = await handleRes(await fetch(`${API_BASE}/videos?ids=${videoIds.join(',')}`, { headers: headers() }));
+  return data.items || [];
+};
+
+/**
+ * Obtiene la información completa de una playlist (metadata + todos los items,
+ * con paginación hecha del lado del servidor).
+ * @param {string} playlistId
+ * @returns {Promise<{youtubePlaylistId: string, title: string, description: string, thumbnail: string, rawItems: Array}>}
+ */
+export const fetchPlaylistData = async (playlistId) => {
+  guardDemo();
+  return handleRes(await fetch(`${API_BASE}/playlist?listId=${encodeURIComponent(playlistId)}`, { headers: headers() }));
+};
+
+/**
+ * Busca videos de reemplazo en YouTube. El servidor descarta los resultados
+ * cuyo embed está bloqueado o no son públicos: lo que llega aquí es siempre
+ * reproducible desde el iframe.
+ * @param {string} query
+ * @param {number} [maxResults=10]
+ * @returns {Promise<Array<{videoId: string, title: string, channelTitle: string, thumbnailUrl: string}>>}
+ */
+export const searchVideos = async (query, maxResults = 10) => {
+  guardDemo();
+  const data = await handleRes(await fetch(
+    `${API_BASE}/search?q=${encodeURIComponent(query)}&maxResults=${maxResults}`,
+    { headers: headers() }
+  ));
+  return data.items || [];
+};
+
+/**
+ * Extrae el ID de la playlist desde una URL de YouTube (o un ID crudo).
+ * @param {string} url
  * @returns {string|null}
  */
 export const extractPlaylistId = (url) => {
@@ -65,66 +136,3 @@ export const extractVideoId = (input) => {
 };
 
 const validateId = (id) => (id && /^[A-Za-z0-9_-]{11}$/.test(id)) ? id : null;
-
-/**
- * Obtiene toda la información y videos de una playlist.
- * @param {string} playlistId 
- * @param {string} apiKey 
- * @returns {Promise<import('../types/player.js').Playlist>}
- */
-export const fetchPlaylistData = async (playlistId, apiKey) => {
-  if (!apiKey) throw new Error("API Key requerida");
-
-  // 1. Obtener metadatos de la playlist
-  const metaRes = await fetch(`${BASE_URL}/playlists?part=snippet&id=${playlistId}&key=${apiKey}`);
-  const metaData = await metaRes.json();
-  
-  if (metaData.error) throw new Error(metaData.error.message);
-  if (!metaData.items || metaData.items.length === 0) throw new Error("Playlist no encontrada o es privada");
-
-  const playlistSnippet = metaData.items[0].snippet;
-  
-  // 2. Obtener todos los videos de la playlist (manejando paginación)
-  let items = [];
-  let nextPageToken = '';
-  
-  do {
-    const itemsRes = await fetch(`${BASE_URL}/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${playlistId}&key=${apiKey}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`);
-    const itemsData = await itemsRes.json();
-    
-    if (itemsData.error) throw new Error(itemsData.error.message);
-    
-    items = [...items, ...itemsData.items];
-    nextPageToken = itemsData.nextPageToken;
-  } while (nextPageToken);
-
-  // 3. Importar y formatear (El parser de metadatos se llamará desde el manejador de estado)
-  return {
-    youtubePlaylistId: playlistId,
-    title: playlistSnippet.title,
-    description: playlistSnippet.description,
-    thumbnail: playlistSnippet.thumbnails?.medium?.url || '',
-    rawItems: items
-  };
-};
-
-/**
- * Busca videos de reemplazo en YouTube para un link roto.
- * @param {string} query 
- * @param {string} apiKey 
- * @param {number} [maxResults=8]
- * @returns {Promise<Array<{videoId: string, title: string, channelTitle: string, thumbnailUrl: string}>>}
- */
-export const searchVideos = async (query, apiKey, maxResults = 8) => {
-  const res = await fetch(`${BASE_URL}/search?part=snippet&type=video&maxResults=${maxResults}&q=${encodeURIComponent(query)}&key=${apiKey}`);
-  if (!res.ok) {
-    throw new Error((await res.json()).error?.message || 'Error en la búsqueda');
-  }
-  const data = await res.json();
-  return (data.items || []).map(item => ({
-    videoId: item.id.videoId,
-    title: item.snippet.title,
-    channelTitle: item.snippet.channelTitle,
-    thumbnailUrl: item.snippet.thumbnails?.medium?.url || ''
-  }));
-};

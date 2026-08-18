@@ -9,12 +9,14 @@ export function TrackEditModal() {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (track) {
       setTitle(track.title);
       setArtist(track.artist);
+      setConfirmDelete(false);
     }
   }, [track]);
 
@@ -68,13 +70,23 @@ export function TrackEditModal() {
       const removedTitle = track.title;
       await removeTrackFromPlaylist(active.id, track.id);
       playlistState.editingTrack.value = null;
+      setConfirmDelete(false);
       showToast(`Se eliminó "${removedTitle}"`);
     } catch (e) {
       console.error('Error al eliminar la canción:', e);
       setError('No se pudo eliminar: ' + e.message);
-    } finally {
       setSaving(false);
     }
+  };
+
+  // Borrado con confirmación en dos pasos (igual que el wipe): evita que un
+  // clic accidental elimine un tema para siempre.
+  const handleDeleteClick = () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    handleRemoveTrack();
   };
 
   return (
@@ -174,6 +186,18 @@ export function TrackEditModal() {
         </div>
 
         <div class="flex gap-3 mt-6">
+          <button
+            onClick={handleDeleteClick}
+            disabled={saving}
+            title="Elimina esta canción de la biblioteca (borrado definitivo)"
+            class={`flex-1 py-2.5 rounded-lg font-semibold transition-colors disabled:opacity-50 border ${
+              confirmDelete
+                ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white'
+                : 'bg-red-500/10 hover:bg-red-500/25 border-red-500/30 text-red-400'
+            }`}
+          >
+            {confirmDelete ? '¿Confirmar?' : 'Eliminar'}
+          </button>
           <button
             onClick={handleClose}
             disabled={saving}

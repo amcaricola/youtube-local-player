@@ -103,18 +103,32 @@ export function TrackTable() {
                   <span title={track.publishedAt || ''}>{formatUploadDate(track.publishedAt)}</span>
                 </td>
                 <td class="py-3 pr-3 text-right rounded-r-lg min-w-[90px]">
-                  <StatusBadge
-                    status={track.removedFromSource ? 'removed' : track.status}
-                    message={track.removedFromSource ? 'Ya no está en la playlist de YouTube, pero sigue guardada con su información' : track.statusMessage}
-                    recoveryDaysLeft={getRecoveryDaysLeft(track)}
-                    onClick={() => {
-                      if (track.removedFromSource) {
-                        window.open(`https://www.youtube.com/watch?v=${track.videoId}`, '_blank');
-                      } else {
-                        playlistState.repairTrack.value = track;
-                      }
-                    }}
-                  />
+                  <div class="inline-flex items-center justify-end gap-1.5 align-middle">
+                    {track.playableVideoId && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playlistState.repairTrack.value = track;
+                        }}
+                        class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold border bg-cyan-500/15 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/40 hover:text-white transition-colors cursor-pointer"
+                        title="Se reproduce una copia alternativa. Clic para cambiarla (buscar otro reemplazo)."
+                      >
+                        reemplazo
+                      </button>
+                    )}
+                    <StatusBadge
+                      status={track.removedFromSource ? 'removed' : track.status}
+                      message={track.removedFromSource ? 'Ya no está en la playlist de YouTube, pero sigue guardada con su información' : track.statusMessage}
+                      recoveryDaysLeft={getRecoveryDaysLeft(track)}
+                      onClick={() => {
+                        if (track.removedFromSource) {
+                          window.open(`https://www.youtube.com/watch?v=${track.videoId}`, '_blank');
+                        } else {
+                          playlistState.repairTrack.value = track;
+                        }
+                      }}
+                    />
+                  </div>
                 </td>
               </tr>
             );
